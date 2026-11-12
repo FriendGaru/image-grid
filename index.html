@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Image Grid Maker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<noscript><p>This tool needs JavaScript, which appears to be turned off in your browser.</p></noscript>
+
+<header>
+    <h1>Image Grid Maker</h1>
+    <p>Combine images into printable grids. Your images never leave your computer: everything happens in your browser.</p>
+</header>
+
+<main>
+    <!-- Step 2: file input and drag-and-drop -->
+    <section id="upload-section">
+        <h2>1. Add images</h2>
+        <div id="drop-zone">
+            <p>Drag and drop images here, or choose them:</p>
+            <input type="file" id="file-input" accept="image/*" multiple>
+        </div>
+        <p id="status" aria-live="polite">No images loaded.</p>
+        <button type="button" id="clear-button">Clear all</button>
+    </section>
+
+    <!-- Step 3: thumbnails of loaded images -->
+    <section id="thumbnail-section">
+        <h2>2. Your images</h2>
+        <div id="thumbnail-list"></div>
+    </section>
+
+    <!-- Step 4: settings form -->
+    <section id="settings-section">
+        <h2>3. Grid settings</h2>
+
+        <fieldset>
+            <legend>Units</legend>
+            <label><input type="radio" name="unit" value="px" checked> Pixels</label>
+            <label><input type="radio" name="unit" value="mm"> Millimeters at print size</label>
+            <label>Print resolution (DPI) <input type="number" id="dpi" value="300"></label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Cell size (<span class="unit-name">pixels</span>)</legend>
+            <label>Width <input type="number" id="cell-width" value="300"></label>
+            <label>Height <input type="number" id="cell-height" value="300"></label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Grid per output image</legend>
+            <label>Columns <input type="number" id="columns" value="3"></label>
+            <button type="button" id="swap-button" title="Swap columns and rows" aria-label="Swap columns and rows">⇄</button>
+            <label>Rows <input type="number" id="rows" value="3"></label>
+        </fieldset>
+
+        <fieldset>
+            <legend>When an image doesn't match the cell shape</legend>
+            <label><input type="radio" name="fitMode" value="stretch" checked> Stretch (distorts to fill the cell)</label>
+            <label><input type="radio" name="fitMode" value="contain"> Contain (fits whole image, leaves empty space)</label>
+            <label><input type="radio" name="fitMode" value="cover"> Cover (fills the cell, crops the overflow)</label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Borders and background</legend>
+            <label>Border width (<span class="unit-name">pixels</span>, 0 for none) <input type="number" id="border-width" value="2"></label>
+            <label>Border color <input type="color" id="border-color" value="#000000"></label>
+            <label>Background color <input type="color" id="background-color" value="#ffffff"></label>
+            <label><input type="checkbox" id="border-empty"> Draw borders around empty cells</label>
+            <label><input type="radio" name="borderTarget" value="cell" checked> Border around each cell</label>
+            <label><input type="radio" name="borderTarget" value="image"> Border around each image (differs only in Contain mode)</label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Paper check (always in millimeters)</legend>
+            <label>Paper size
+                <select id="paper-size">
+                    <option value="none">No paper check</option>
+                    <optgroup label="ISO A">
+                        <option value="a5">A5 (148 × 210 mm)</option>
+                        <option value="a4" selected>A4 (210 × 297 mm)</option>
+                        <option value="a3">A3 (297 × 420 mm)</option>
+                    </optgroup>
+                    <optgroup label="ISO B">
+                        <option value="b6">B6 (125 × 176 mm)</option>
+                        <option value="b5">B5 (176 × 250 mm)</option>
+                        <option value="b4">B4 (250 × 353 mm)</option>
+                        <option value="b3">B3 (353 × 500 mm)</option>
+                    </optgroup>
+                    <optgroup label="JIS B (Japan)">
+                        <option value="jisb6">JIS B6 (128 × 182 mm)</option>
+                        <option value="jisb5">JIS B5 (182 × 257 mm)</option>
+                        <option value="jisb4">JIS B4 (257 × 364 mm)</option>
+                        <option value="jisb3">JIS B3 (364 × 515 mm)</option>
+                    </optgroup>
+                    <optgroup label="US">
+                        <option value="letter">US Letter (215.9 × 279.4 mm)</option>
+                        <option value="legal">US Legal (215.9 × 355.6 mm)</option>
+                        <option value="tabloid">US Tabloid (279.4 × 431.8 mm)</option>
+                    </optgroup>
+                    <optgroup label="Other">
+                        <option value="custom">Custom…</option>
+                    </optgroup>
+                </select>
+            </label>
+            <span id="custom-paper" hidden>
+                    <label>Side 1 (mm) <input type="number" id="custom-side-1" value="210"></label>
+                    <label>Side 2 (mm) <input type="number" id="custom-side-2" value="297"></label>
+                </span>
+            <label><input type="radio" name="orientation" value="portrait" checked> Portrait</label>
+            <label><input type="radio" name="orientation" value="landscape"> Landscape</label>
+            <label>Margin on every side (mm) <input type="number" id="margin" value="10"></label>
+        </fieldset>
+
+        <p id="paper-message"></p>
+        <p id="settings-summary"></p>
+        <p id="settings-error" role="alert"></p>
+    </section>
+
+    <!-- Steps 5-7: generated grid images and downloads -->
+    <section id="output-section">
+        <h2>4. Output</h2>
+        <button type="button" id="generate-button">Generate output images</button>
+        <button type="button" id="download-all-button" hidden>Download all</button>
+        <span id="generate-hint"></span>
+        <p id="output-message" aria-live="polite"></p>
+        <p id="stale-note" hidden>⚠ Your images or settings have changed since these were generated. Click Generate to update them.</p>
+        <div id="output-list"></div>
+    </section>
+</main>
+
+<script src="script.js"></script>
+</body>
+</html>

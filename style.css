@@ -1,0 +1,432 @@
+/* ==========================================================================
+   Image Grid Maker: styles
+
+   Contents
+     1. Design tokens   every color, size, and spacing value, named once
+     2. Base            page-wide rules
+     3. Components      buttons, focus ring, invalid fields
+     4. Page areas      upload, thumbnails, settings, output (in page order)
+
+   To change the look, edit a token in section 1. The rules after it use
+   tokens by name, var(--name), and contain very few raw values.
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. DESIGN TOKENS
+   ========================================================================== */
+
+:root {
+
+    /* --- Colors, named for what they are used for --- */
+
+    /* Text */
+    --color-text:          #222;      /* near-black */
+    --color-text-muted:    #666;      /* medium gray */
+    --color-text-on-dark:  #fff;      /* white, for text on dark or blue backgrounds */
+
+    /* Lines and surfaces */
+    --color-border:        #d0d0d0;   /* light gray; sections, fieldsets, buttons, thumbnails */
+    --color-border-dashed: #888;      /* medium gray; the drop zone */
+    --color-placeholder:   #f4f4f4;   /* very light gray; behind thumbnails */
+
+    /* Buttons */
+    --color-button:        #f6f6f6;   /* very light gray */
+    --color-button-hover:  #e9e9e9;   /* light gray, a shade darker than the button */
+
+    /* Accent: the main action and the drag highlight */
+    --color-accent:        #0066cc;   /* medium blue */
+    --color-accent-hover:  #004d99;   /* dark blue */
+    --color-accent-soft:   #eef5ff;   /* very pale blue */
+
+    /* Status */
+    --color-danger:        #c00;      /* strong red */
+    --color-danger-soft:   #fff0f0;   /* very pale red */
+    --color-warning:       #a05a00;   /* dark amber */
+    --color-success:       #060;      /* dark green */
+
+    /* The × button on thumbnails */
+    --color-overlay:       rgba(0, 0, 0, 0.65);   /* black at 65% opacity */
+    --color-overlay-hover: #000;                  /* solid black */
+
+    /* Keyboard focus ring */
+    --color-focus-ring:    #7ab7ff;   /* light sky blue */
+
+
+    /* --- Spacing: use these for margins, padding, and gaps --- */
+    --space-xs:  0.25rem;
+    --space-sm:  0.5rem;
+    --space-md:  0.75rem;
+    --space-lg:  1rem;
+    --space-xl:  1.5rem;
+    --space-2xl: 2rem;
+
+
+    /* --- Typography --- */
+    --font-family:        system-ui, sans-serif;
+    --font-size-small:    0.75rem;   /* thumbnail captions */
+    --font-size-detail:   0.85rem;   /* output card details */
+    --font-size-base:     1rem;
+    --font-size-icon:     1.1rem;    /* symbol buttons such as ⇄ */
+    --font-size-heading:  1.2rem;
+    --font-weight-strong: 600;
+    --line-height-base:   1.5;
+
+
+    /* --- Shapes --- */
+    --radius-small: 4px;
+    --radius:       6px;
+    --radius-round: 50%;
+
+    --line-width:          1px;
+    --line-width-emphasis: 2px;
+
+
+    /* --- Component sizes --- */
+    --page-max-width:      1000px;
+    --thumbnail-min-width: 120px;
+    --settings-column-min: 320px;   /* narrowest a settings box gets before stacking */
+    --number-input-width:  6rem;
+    --copies-input-width:  4rem;
+    --remove-button-size:  1.5rem;
+    --message-min-height:  1.5em;   /* stops the layout jumping as messages appear */
+
+    --button-padding:         0.4rem 0.9rem;
+    --button-padding-compact: 0.1rem 0.6rem;   /* ↺ ↻ ⇄ */
+
+    --focus-ring-width:  3px;
+    --focus-ring-offset: 2px;
+
+    --opacity-skipped:   0.35;   /* thumbnails set to 0 copies */
+    --opacity-disabled:  0.5;
+}
+
+
+/* ==========================================================================
+   2. BASE
+   ========================================================================== */
+
+/* Makes the "hidden" attribute win over any display rule set elsewhere. */
+[hidden] {
+    display: none !important;
+}
+
+/* Widths include padding and borders, which keeps layouts predictable. */
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    max-width: var(--page-max-width);
+    margin: 0 auto;
+    padding: var(--space-lg);
+    font-family: var(--font-family);
+    line-height: var(--line-height-base);
+    color: var(--color-text);
+}
+
+header p {
+    margin-top: 0;
+    color: var(--color-text-muted);
+}
+
+section {
+    margin-bottom: var(--space-2xl);
+    padding: var(--space-lg);
+    border: var(--line-width) solid var(--color-border);
+    border-radius: var(--radius);
+}
+
+h2 {
+    margin-top: 0;
+    font-size: var(--font-size-heading);
+}
+
+
+/* ==========================================================================
+   3. COMPONENTS
+   ========================================================================== */
+
+/* --- Buttons --- */
+
+button {
+    font: inherit;
+    padding: var(--button-padding);
+    border: var(--line-width) solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-button);
+    cursor: pointer;
+}
+
+button:not(.remove):hover:not(:disabled) {
+    background: var(--color-button-hover);
+}
+
+button:disabled {
+    opacity: var(--opacity-disabled);
+    cursor: not-allowed;
+}
+
+/* The main call to action */
+#generate-button {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-text-on-dark);
+    font-weight: var(--font-weight-strong);
+}
+
+#generate-button:hover:not(:disabled) {
+    background: var(--color-accent-hover);
+}
+
+/* --- Keyboard focus --- */
+
+:focus-visible {
+    outline: var(--focus-ring-width) solid var(--color-focus-ring);
+    outline-offset: var(--focus-ring-offset);
+}
+
+/* --- Invalid form fields (the class is toggled by script.js) --- */
+
+input.invalid {
+    border: var(--line-width-emphasis) solid var(--color-danger);
+    background: var(--color-danger-soft);
+}
+
+
+/* ==========================================================================
+   4. PAGE AREAS
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Upload
+   -------------------------------------------------------------------------- */
+
+#drop-zone {
+    padding: var(--space-2xl);
+    border: var(--line-width-emphasis) dashed var(--color-border-dashed);
+    border-radius: var(--radius);
+    text-align: center;
+}
+
+/* script.js adds this class while files are dragged over the zone */
+#drop-zone.drag-over {
+    border-color: var(--color-accent);
+    background: var(--color-accent-soft);
+}
+
+
+/* --------------------------------------------------------------------------
+   Thumbnails
+   -------------------------------------------------------------------------- */
+
+#thumbnail-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--thumbnail-min-width), 1fr));
+    gap: var(--space-md);
+}
+
+/* One card per loaded image. Its parts, top to bottom:
+   picture, name, size, rotate buttons, copies field, skip note.
+   The × button is pinned to the top-right corner. */
+.thumbnail {
+    position: relative;   /* anchors the × button */
+    padding: var(--space-xs);
+    border: var(--line-width) solid var(--color-border);
+    border-radius: var(--radius-small);
+    font-size: var(--font-size-small);
+    text-align: center;
+    overflow: hidden;
+}
+
+/* Square, so a rotated image always fits inside its own box. */
+.thumbnail img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: contain;
+    background: var(--color-placeholder);
+}
+
+.thumbnail .name {
+    margin-top: var(--space-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.thumbnail .size {
+    color: var(--color-text-muted);
+}
+
+/* Rotate buttons */
+
+.rotate-controls {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-xs);
+    margin-top: var(--space-xs);
+}
+
+.rotate-controls button {
+    padding: var(--button-padding-compact);
+    font-size: var(--font-size-base);
+    line-height: 1.2;
+}
+
+/* Copies field */
+
+.thumbnail .copies {
+    display: block;
+    margin-top: var(--space-xs);
+}
+
+.thumbnail .copies input {
+    width: var(--copies-input-width);
+}
+
+/* Images set to 0 copies are dimmed and labeled "Skipped" */
+
+.thumbnail.skipped img {
+    opacity: var(--opacity-skipped);
+}
+
+.thumbnail .skip-note {
+    display: block;
+    color: var(--color-warning);
+    font-weight: var(--font-weight-strong);
+}
+
+/* Remove (×) button */
+
+.thumbnail .remove {
+    position: absolute;
+    top: var(--space-xs);
+    right: var(--space-xs);
+    width: var(--remove-button-size);
+    height: var(--remove-button-size);
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-round);
+    background: var(--color-overlay);
+    color: var(--color-text-on-dark);
+    line-height: 1;
+}
+
+.thumbnail .remove:hover {
+    background: var(--color-overlay-hover);
+}
+
+
+/* --------------------------------------------------------------------------
+   Settings
+   -------------------------------------------------------------------------- */
+
+/* Fieldsets sit side by side when there's room, and stack when there isn't. */
+#settings-section {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(var(--settings-column-min), 100%), 1fr));
+    gap: var(--space-lg);
+}
+
+/* The heading and message lines always span the full width. */
+#settings-section > h2,
+#settings-section > p {
+    grid-column: 1 / -1;
+    margin: 0;
+}
+
+fieldset {
+    min-width: 0;   /* lets the grid shrink a fieldset instead of overflowing */
+    margin: 0;
+    border: var(--line-width) solid var(--color-border);
+    border-radius: var(--radius-small);
+}
+
+fieldset label {
+    display: inline-block;
+    margin: var(--space-xs) var(--space-lg) var(--space-xs) 0;
+}
+
+/* Radio options are long, so they stack vertically. */
+fieldset label:has(input[type="radio"]) {
+    display: block;
+}
+
+#settings-section input[type="number"] {
+    width: var(--number-input-width);
+}
+
+#swap-button {
+    margin: 0 var(--space-lg) 0 0;
+    padding: var(--button-padding-compact);
+    font-size: var(--font-size-icon);
+}
+
+/* Messages below the settings */
+
+#paper-message {
+    min-height: var(--message-min-height);
+}
+
+#paper-message.ok {
+    color: var(--color-success);
+}
+
+#paper-message.warn {
+    color: var(--color-warning);
+}
+
+#settings-summary {
+    color: var(--color-text-muted);
+}
+
+#settings-error {
+    min-height: var(--message-min-height);
+    color: var(--color-danger);
+}
+
+
+/* --------------------------------------------------------------------------
+   Output
+   -------------------------------------------------------------------------- */
+
+#generate-hint {
+    margin-left: var(--space-sm);
+    color: var(--color-danger);
+}
+
+#download-all-button {
+    margin-left: var(--space-sm);
+}
+
+#stale-note {
+    color: var(--color-warning);
+    font-weight: var(--font-weight-strong);
+}
+
+.output-card {
+    margin-top: var(--space-xl);
+}
+
+.output-card h3 {
+    margin: 0 0 var(--space-xs);
+    font-size: var(--font-size-base);
+}
+
+.output-card p {
+    margin: 0 0 var(--space-sm);
+    font-size: var(--font-size-detail);
+    color: var(--color-text-muted);
+}
+
+.output-card .download {
+    margin-bottom: var(--space-sm);
+}
+
+.output-card img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border: var(--line-width) solid var(--color-border);
+}
