@@ -5,7 +5,8 @@
      1. Design tokens   every color, size, and spacing value, named once
      2. Base            page-wide rules
      3. Components      buttons, focus ring, invalid fields
-     4. Page areas      upload, thumbnails, settings, output (in page order)
+     4. Page areas      upload, thumbnails, presets, settings, output
+                        (in page order)
 
    To change the look, edit a token in section 1. The rules after it use
    tokens by name, var(--name), and contain very few raw values.
@@ -88,6 +89,7 @@
     --settings-column-min: 320px;   /* narrowest a settings box gets before stacking */
     --number-input-width:  6rem;
     --copies-input-width:  4rem;
+    --text-input-width:    16rem;   /* the preset name box */
     --remove-button-size:  1.5rem;
     --message-min-height:  1.5em;   /* stops the layout jumping as messages appear */
 
@@ -319,6 +321,41 @@ input.invalid {
 
 
 /* --------------------------------------------------------------------------
+   Saving and loading settings
+   -------------------------------------------------------------------------- */
+
+#preset-name {
+    width: var(--text-input-width);
+}
+
+#save-settings-button,
+#load-settings-button {
+    margin-left: var(--space-sm);
+}
+
+#preset-message {
+    min-height: var(--message-min-height);
+    color: var(--color-text-muted);
+}
+
+#preset-message.warn {
+    color: var(--color-warning);
+    font-weight: var(--font-weight-strong);
+}
+
+#preset-message.error {
+    color: var(--color-danger);
+}
+
+/* One line per substituted or ignored setting after a load */
+#preset-warnings {
+    margin: 0;
+    padding-left: var(--space-xl);
+    color: var(--color-warning);
+}
+
+
+/* --------------------------------------------------------------------------
    Settings
    -------------------------------------------------------------------------- */
 
@@ -361,6 +398,17 @@ fieldset label:has(input[type="radio"]) {
     margin: 0 var(--space-lg) 0 0;
     padding: var(--button-padding-compact);
     font-size: var(--font-size-icon);
+}
+
+/* Ratio controls appear under the lock checkbox when it's on */
+#ratio-controls {
+    margin-top: var(--space-xs);
+}
+
+.field-note {
+    margin: var(--space-xs) 0 0;
+    font-size: var(--font-size-detail);
+    color: var(--color-text-muted);
 }
 
 /* Messages below the settings */

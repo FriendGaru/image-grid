@@ -15,7 +15,7 @@
 </header>
 
 <main>
-    <!-- Step 2: file input and drag-and-drop -->
+    <!-- 1. Add images: file picker and drag-and-drop -->
     <section id="upload-section">
         <h2>1. Add images</h2>
         <div id="drop-zone">
@@ -26,50 +26,81 @@
         <button type="button" id="clear-button">Clear all</button>
     </section>
 
-    <!-- Step 3: thumbnails of loaded images -->
+    <!-- 2. Thumbnails of loaded images (cards are built by script.js) -->
     <section id="thumbnail-section">
         <h2>2. Your images</h2>
         <div id="thumbnail-list"></div>
     </section>
 
-    <!-- Step 4: settings form -->
+    <!-- Saving and loading settings as JSON files -->
+    <section id="presets-section">
+        <h2>Save or load settings</h2>
+        <label>Preset name <input type="text" id="preset-name" maxlength="80" placeholder="e.g. a4-photos"></label>
+        <button type="button" id="save-settings-button">Save settings</button>
+        <button type="button" id="load-settings-button">Load settings</button>
+        <input type="file" id="load-settings-input" accept=".json,application/json" hidden>
+        <p id="preset-message" aria-live="polite"></p>
+        <ul id="preset-warnings"></ul>
+    </section>
+
+    <!-- 3. Settings form.
+         The starting values are not set here: script.js fills every control
+         from its DEFAULT_SETTINGS list when the page loads. -->
     <section id="settings-section">
         <h2>3. Grid settings</h2>
 
         <fieldset>
             <legend>Units</legend>
-            <label><input type="radio" name="unit" value="px" checked> Pixels</label>
+            <label><input type="radio" name="unit" value="px"> Pixels</label>
             <label><input type="radio" name="unit" value="mm"> Millimeters at print size</label>
-            <label>Print resolution (DPI) <input type="number" id="dpi" value="300"></label>
+            <label>Print resolution (DPI) <input type="number" id="dpi"></label>
         </fieldset>
 
         <fieldset>
             <legend>Cell size (<span class="unit-name">pixels</span>)</legend>
-            <label>Width <input type="number" id="cell-width" value="300"></label>
-            <label>Height <input type="number" id="cell-height" value="300"></label>
+            <label>Width <input type="number" id="cell-width"></label>
+            <label>Height <input type="number" id="cell-height"></label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Cell shape</legend>
+            <label><input type="checkbox" id="fixed-ratio"> Keep a fixed ratio (width ÷ height)</label>
+            <div id="ratio-controls" hidden>
+                <label><input type="radio" name="ratioMode" value="single"> One number, such as 1.333</label>
+                <label><input type="radio" name="ratioMode" value="pair"> Two numbers, such as 4 : 3</label>
+                <span id="ratio-single-group" hidden>
+            <label>Ratio <input type="number" id="ratio-single"></label>
+        </span>
+                <span id="ratio-pair-group" hidden>
+            <label>Ratio <input type="number" id="ratio-width" aria-label="Ratio, width part"></label>
+            :
+            <input type="number" id="ratio-height" aria-label="Ratio, height part">
+        </span>
+                <p class="field-note">Changing the width or height updates the other. Changing the ratio keeps the height and updates the width.</p>
+            </div>
         </fieldset>
 
         <fieldset>
             <legend>Grid per output image</legend>
-            <label>Columns <input type="number" id="columns" value="3"></label>
+            <label>Columns <input type="number" id="columns"></label>
             <button type="button" id="swap-button" title="Swap columns and rows" aria-label="Swap columns and rows">⇄</button>
-            <label>Rows <input type="number" id="rows" value="3"></label>
+            <label>Rows <input type="number" id="rows"></label>
         </fieldset>
 
         <fieldset>
             <legend>When an image doesn't match the cell shape</legend>
-            <label><input type="radio" name="fitMode" value="stretch" checked> Stretch (distorts to fill the cell)</label>
+            <label><input type="radio" name="fitMode" value="stretch"> Stretch (distorts to fill the cell)</label>
             <label><input type="radio" name="fitMode" value="contain"> Contain (fits whole image, leaves empty space)</label>
             <label><input type="radio" name="fitMode" value="cover"> Cover (fills the cell, crops the overflow)</label>
         </fieldset>
 
         <fieldset>
             <legend>Borders and background</legend>
-            <label>Border width (<span class="unit-name">pixels</span>, 0 for none) <input type="number" id="border-width" value="2"></label>
-            <label>Border color <input type="color" id="border-color" value="#000000"></label>
-            <label>Background color <input type="color" id="background-color" value="#ffffff"></label>
+            <label>Border width (<span class="unit-name">pixels</span>, 0 for none) <input type="number" id="border-width"></label>
+            <label>Border color <input type="color" id="border-color"></label>
+            <label>Background color <input type="color" id="background-color"></label>
             <label><input type="checkbox" id="border-empty"> Draw borders around empty cells</label>
-            <label><input type="radio" name="borderTarget" value="cell" checked> Border around each cell</label>
+            <label><input type="radio" name="borderTarget" value="cell"> Border around each cell</label>
             <label><input type="radio" name="borderTarget" value="image"> Border around each image (differs only in Contain mode)</label>
         </fieldset>
 
@@ -80,7 +111,7 @@
                     <option value="none">No paper check</option>
                     <optgroup label="ISO A">
                         <option value="a5">A5 (148 × 210 mm)</option>
-                        <option value="a4" selected>A4 (210 × 297 mm)</option>
+                        <option value="a4">A4 (210 × 297 mm)</option>
                         <option value="a3">A3 (297 × 420 mm)</option>
                     </optgroup>
                     <optgroup label="ISO B">
@@ -106,12 +137,12 @@
                 </select>
             </label>
             <span id="custom-paper" hidden>
-                    <label>Side 1 (mm) <input type="number" id="custom-side-1" value="210"></label>
-                    <label>Side 2 (mm) <input type="number" id="custom-side-2" value="297"></label>
+                    <label>Side 1 (mm) <input type="number" id="custom-side-1"></label>
+                    <label>Side 2 (mm) <input type="number" id="custom-side-2"></label>
                 </span>
-            <label><input type="radio" name="orientation" value="portrait" checked> Portrait</label>
+            <label><input type="radio" name="orientation" value="portrait"> Portrait</label>
             <label><input type="radio" name="orientation" value="landscape"> Landscape</label>
-            <label>Margin on every side (mm) <input type="number" id="margin" value="10"></label>
+            <label>Margin on every side (mm) <input type="number" id="margin"></label>
         </fieldset>
 
         <p id="paper-message"></p>
@@ -119,7 +150,7 @@
         <p id="settings-error" role="alert"></p>
     </section>
 
-    <!-- Steps 5-7: generated grid images and downloads -->
+    <!-- 4. Generated grid images and downloads -->
     <section id="output-section">
         <h2>4. Output</h2>
         <button type="button" id="generate-button">Generate output images</button>

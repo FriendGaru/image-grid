@@ -4,11 +4,10 @@
 // Each entry: { file, url, element, width, height, rotation, copies }
 const images = [];
 
-// The most times one image can be repeated in the output.
-const MAX_COPIES = 99;
-
-// The fewest times one image can be repeated. 0 means "skip this image".
+// How many times one image can be repeated in the output.
+// 0 means "skip this image".
 const MIN_COPIES = 0;
+const MAX_COPIES = 99;
 
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
@@ -54,6 +53,7 @@ function countCells(list) {
 }
 
 // Repeats each image `copies` times, keeping the original order: A A A B B C.
+// An image with 0 copies adds nothing, so it is skipped.
 function expandCopies(list) {
     const cells = [];
     for (const image of list) {
@@ -317,6 +317,25 @@ for (const field of Object.values(paperFields)) {
     field.input.step = "0.1";
 }
 
+// A fixed cell shape is a ratio of width ÷ height: 4 : 3 and 1.3333 both mean landscape.
+const MIN_RATIO = 0.02; // 1 : 50
+const MAX_RATIO = 50;   // 50 : 1
+
+const fixedRatioInput = document.getElementById("fixed-ratio");
+
+// Each field belongs to one mode: "single" (one number) or "pair" (two numbers).
+const ratioFields = {
+    ratioSingle: { input: document.getElementById("ratio-single"), label: "Ratio",             min: MIN_RATIO, max: MAX_RATIO, mode: "single" },
+    ratioWidth:  { input: document.getElementById("ratio-width"),  label: "Ratio width part",  min: 0.01,      max: 1000,      mode: "pair" },
+    ratioHeight: { input: document.getElementById("ratio-height"), label: "Ratio height part", min: 0.01,      max: 1000,      mode: "pair" },
+};
+
+for (const field of Object.values(ratioFields)) {
+    field.input.min = String(field.min);
+    field.input.max = String(field.max);
+    field.input.step = "any"; // any decimal is fine, such as 1.3333
+}
+
 // Returns the paper's { width, height } in mm for the chosen size and
 // orientation, or null when the user doesn't want a paper check.
 function getPaperMm(paper, orientation, side1, side2) {
@@ -340,6 +359,73 @@ let currentUnit = "px";
 
 function getSelectedUnit() {
     return document.querySelector('input[name="unit"]:checked').value;
+}
+
+function getRatioMode() {
+    return document.querySelector('input[name="ratioMode"]:checked').value;
+}
+
+// The ratio currently entered (width ÷ height), or null if it isn't usable yet.
+function getFixedRatio() {
+    const mode = getRatioMode();
+    const ratio = mode === "single"
+        ? ratioFields.ratioSingle.input.valueAsNumber
+        : ratioFields.ratioWidth.input.valueAsNumber / ratioFields.ratioHeight.input.valueAsNumber;
+    return Number.isFinite(ratio) && ratio >= MIN_RATIO && ratio <= MAX_RATIO ? ratio : null;
+}
+
+// Pixel sizes are whole numbers; millimeter sizes get 2 decimals.
+function roundSize(value, unit) {
+    return unit === "mm" ? Number(value.toFixed(2)) : Math.round(value);
+}
+
+// When the ratio is locked, updates the "other" size field after the user edits
+// `source`. Editing the width changes the height. Editing the height or the
+// ratio keeps the height and changes the width.
+function syncFixedRatio(source) {
+    if (!fixedRatioInput.checked) {
+        return;
+    }
+    const ratio = getFixedRatio();
+    if (ratio === null) {
+        return; // the ratio is empty or out of range; the form will flag it
+    }
+
+    const unit = getSelectedUnit();
+    const widthInput = sizeFields.cellWidth.input;
+    const heightInput = sizeFields.cellHeight.input;
+    const isRatioControl = source === fixedRatioInput ||
+        Object.values(ratioFields).some((field) => field.input === source);
+
+    if (source === widthInput) {
+        const width = widthInput.valueAsNumber;
+        if (Number.isFinite(width) && width > 0) {
+            heightInput.value = String(roundSize(width / ratio, unit));
+        }
+    } else if (source === heightInput || isRatioControl) {
+        const height = heightInput.valueAsNumber;
+        if (Number.isFinite(height) && height > 0) {
+            widthInput.value = String(roundSize(height * ratio, unit));
+        }
+    }
+}
+
+// Rewrites the ratio boxes when the user switches between one and two numbers.
+// The cell size is left alone.
+function convertRatioFields(newMode) {
+    if (newMode === "single") {
+        const width = ratioFields.ratioWidth.input.valueAsNumber;
+        const height = ratioFields.ratioHeight.input.valueAsNumber;
+        if (width > 0 && height > 0 && Number.isFinite(width / height)) {
+            ratioFields.ratioSingle.input.value = String(Number((width / height).toFixed(4)));
+        }
+    } else {
+        const ratio = ratioFields.ratioSingle.input.valueAsNumber;
+        if (Number.isFinite(ratio) && ratio > 0) {
+            ratioFields.ratioWidth.input.value = String(ratio);
+            ratioFields.ratioHeight.input.value = "1";
+        }
+    }
 }
 
 // Applies the right min/max/step to the size inputs and updates the unit labels.
@@ -440,6 +526,43 @@ function readSettings() {
         }
     }
 
+    // Fixed cell ratio. Only the fields for the chosen mode are checked.
+    values.fixedRatio = fixedRatioInput.checked;
+    values.ratioMode = getRatioMode();
+    let ratioFieldsValid = true;
+
+    for (const [key, field] of Object.entries(ratioFields)) {
+        const needed = values.fixedRatio && field.mode === values.ratioMode;
+        if (!needed) {
+            field.input.classList.remove("invalid");
+            continue;
+        }
+
+        const number = field.input.valueAsNumber;
+        const valid = Number.isFinite(number) && number >= field.min && number <= field.max;
+        field.input.classList.toggle("invalid", !valid);
+
+        if (valid) {
+            values[key] = number;
+        } else {
+            ratioFieldsValid = false;
+            errors.push(`${field.label} must be a number from ${field.min} to ${field.max}.`);
+        }
+    }
+
+    // Two valid numbers can still make a ratio that's too extreme.
+    if (values.fixedRatio && ratioFieldsValid) {
+        const ratio = values.ratioMode === "single"
+            ? values.ratioSingle
+            : values.ratioWidth / values.ratioHeight;
+        if (ratio < MIN_RATIO || ratio > MAX_RATIO) {
+            errors.push(`The ratio must be between ${MIN_RATIO} (1 : 50) and ${MAX_RATIO} (50 : 1).`);
+            for (const field of Object.values(ratioFields)) {
+                field.input.classList.toggle("invalid", field.mode === values.ratioMode);
+            }
+        }
+    }
+
     // Convert to pixels (needs a valid DPI and valid size fields).
     if (errors.length === 0) {
         for (const key of Object.keys(sizeFields)) {
@@ -454,9 +577,7 @@ function readSettings() {
     // Individually valid numbers can still combine into a canvas that's too big.
     if (errors.length === 0) {
         const size = getCanvasSize(values);
-        if (size.width > MAX_CANVAS_SIDE ||
-            size.height > MAX_CANVAS_SIDE ||
-            size.width * size.height > MAX_CANVAS_AREA) {
+        if (isCanvasTooLarge(size)) {
             errors.push(
                 `That would make an output image of ${size.width} × ${size.height} pixels, ` +
                 `which is too large for browsers to draw reliably. Reduce the cell size, columns, rows, or DPI.`
@@ -474,6 +595,11 @@ function readSettings() {
 }
 
 function onSettingsChange() {
+    // Show the ratio controls only when the lock is on, and only the boxes for the chosen mode.
+    document.getElementById("ratio-controls").hidden = !fixedRatioInput.checked;
+    const pairMode = getRatioMode() === "pair";
+    document.getElementById("ratio-single-group").hidden = pairMode;
+    document.getElementById("ratio-pair-group").hidden = !pairMode;
     document.getElementById("custom-paper").hidden =
         document.getElementById("paper-size").value !== "custom";
 
@@ -601,7 +727,14 @@ function updatePaperCheck() {
 }
 
 // One listener for the whole section: "input" events bubble up from every control.
-settingsSection.addEventListener("input", onSettingsChange);
+settingsSection.addEventListener("input", (event) => {
+    if (event.target.name === "ratioMode") {
+        convertRatioFields(event.target.value); // changes the ratio boxes, not the cell size
+    } else {
+        syncFixedRatio(event.target); // updates the other size field when the lock is on
+    }
+    onSettingsChange();
+});
 
 // Swaps the Columns and Rows fields, then re-reads the form.
 document.getElementById("swap-button").addEventListener("click", () => {
@@ -614,12 +747,521 @@ document.getElementById("swap-button").addEventListener("click", () => {
     onSettingsChange();
 });
 
+// --- Saving settings ---
+
+const SETTINGS_FILE_FORMAT = "image-grid-settings";
+const SETTINGS_FILE_VERSION = 1;
+
+// The default for every setting, in the units the form shows. The loader
+// uses these for anything missing or invalid in a file, and the form is
+// filled from them at startup.
+const DEFAULT_SETTINGS = {
+    unit: "px",
+    dpi: 300,
+    cellWidth: 300,
+    cellHeight: 300,
+    columns: 3,
+    rows: 3,
+    fixedRatio: false,
+    ratioMode: "pair",
+    ratioSingle: 1.3333,
+    ratioWidth: 4,
+    ratioHeight: 3,
+    fitMode: "stretch",
+    borderWidth: 2,
+    borderColor: "#000000",
+    backgroundColor: "#ffffff",
+    borderEmptyCells: false,
+    borderTarget: "cell",
+    paper: "a4",
+    customSide1: 210,
+    customSide2: 297,
+    orientation: "portrait",
+    margin: 10,
+};
+
+const presetNameInput = document.getElementById("preset-name");
+const presetMessage = document.getElementById("preset-message");
+const presetWarnings = document.getElementById("preset-warnings");
+
+// Reads every control as the user sees it (in their chosen unit, not pixels).
+// Only call this when the settings are valid.
+function getFormValues() {
+    // The custom paper sides aren't validated unless "Custom" is selected,
+    // so they might hold junk. Fall back to the defaults if they do.
+    const numberOrDefault = (input, fallback) =>
+        Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : fallback;
+
+    // Ratio boxes that are hidden might hold junk, so fall back to the default.
+    const ratioOrDefault = (key) => {
+        const field = ratioFields[key];
+        const number = field.input.valueAsNumber;
+        return Number.isFinite(number) && number >= field.min && number <= field.max
+            ? number
+            : DEFAULT_SETTINGS[key];
+    };
+
+    return {
+        unit: getSelectedUnit(),
+        dpi: numberFields.dpi.input.valueAsNumber,
+        cellWidth: sizeFields.cellWidth.input.valueAsNumber,
+        cellHeight: sizeFields.cellHeight.input.valueAsNumber,
+        columns: numberFields.columns.input.valueAsNumber,
+        rows: numberFields.rows.input.valueAsNumber,
+        fixedRatio: fixedRatioInput.checked,
+        ratioMode: getRatioMode(),
+        ratioSingle: ratioOrDefault("ratioSingle"),
+        ratioWidth: ratioOrDefault("ratioWidth"),
+        ratioHeight: ratioOrDefault("ratioHeight"),
+        fitMode: document.querySelector('input[name="fitMode"]:checked').value,
+        borderWidth: sizeFields.borderWidth.input.valueAsNumber,
+        borderColor: document.getElementById("border-color").value,
+        backgroundColor: document.getElementById("background-color").value,
+        borderEmptyCells: document.getElementById("border-empty").checked,
+        borderTarget: document.querySelector('input[name="borderTarget"]:checked').value,
+        paper: document.getElementById("paper-size").value,
+        customSide1: numberOrDefault(paperFields.customSide1.input, DEFAULT_SETTINGS.customSide1),
+        customSide2: numberOrDefault(paperFields.customSide2.input, DEFAULT_SETTINGS.customSide2),
+        orientation: document.querySelector('input[name="orientation"]:checked').value,
+        margin: paperFields.margin.input.valueAsNumber,
+    };
+}
+
+// Turns a preset name into a safe filename (without the extension).
+// Keeps letters and digits from any language; replaces anything else that
+// operating systems might reject.
+function makeSafeFilename(name) {
+    const cleaned = name
+        .replace(/[^\p{L}\p{N} ._()-]/gu, "-")
+        .replace(/\s+/g, " ")
+        .replace(/^[\s.]+|[\s.]+$/g, "") // no leading or trailing spaces or dots
+        .slice(0, 80)
+        .trim();
+    return cleaned || "grid-settings";
+}
+
+// Saves text as a file by clicking a temporary link.
+function downloadTextFile(text, filename) {
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+
+    // Revoking right away can cancel the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+document.getElementById("save-settings-button").addEventListener("click", () => {
+    presetMessage.className = "";
+    presetWarnings.textContent = ""; // clear any warnings from an earlier load
+
+    if (!settingsValid) {
+        presetMessage.className = "error";
+        presetMessage.textContent = "Fix the problem shown in the settings first, then save.";
+        return;
+    }
+
+    const name = presetNameInput.value.trim();
+    const filename = makeSafeFilename(name) + ".json";
+
+    const file = {
+        format: SETTINGS_FILE_FORMAT,
+        version: SETTINGS_FILE_VERSION,
+        name: name,
+        settings: getFormValues(),
+    };
+
+    // The "null, 2" makes the JSON indented, so people can read and edit it.
+    downloadTextFile(JSON.stringify(file, null, 2), filename);
+
+    presetMessage.textContent =
+        `Saved as ${filename}. It is in your browser's download location; ` +
+        `move it to your presets folder if you keep one.`;
+});
+
+// --- Loading settings ---
+
+const MAX_SETTINGS_FILE_BYTES = 1024 * 1024; // real files are under 1 KB
+const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+const loadSettingsInput = document.getElementById("load-settings-input");
+
+const isPlainObject = (value) =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isNumberInRange = (value, min, max) =>
+    typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+
+const isWholeNumberInRange = (value, min, max) =>
+    Number.isInteger(value) && value >= min && value <= max;
+
+function unitWord(unit) {
+    return unit === "mm" ? "millimeters" : "pixels";
+}
+
+// --- The rule for every setting ---
+// valid(value, unit): is this value acceptable?
+// requirement(unit):  the sentence used in the warning when it isn't.
+
+function wholeNumberRule(field) {
+    return {
+        label: field.label,
+        valid: (value) => isWholeNumberInRange(value, field.min, field.max),
+        requirement: () => `is not a whole number from ${field.min} to ${field.max}`,
+    };
+}
+
+// Cell size and border width: the allowed range depends on the unit.
+function sizeRule(field) {
+    return {
+        label: field.label,
+        valid: (value, unit) => unit === "mm"
+            ? isNumberInRange(value, field.mm.min, field.mm.max)
+            : isWholeNumberInRange(value, field.px.min, field.px.max),
+        requirement: (unit) =>
+            `is not a ${unit === "mm" ? "number" : "whole number"} from ` +
+            `${field[unit].min} to ${field[unit].max} ${unitWord(unit)}`,
+    };
+}
+
+// Margin and custom paper sides are always in millimeters.
+function millimeterRule(field) {
+    return {
+        label: field.label,
+        valid: (value) => isNumberInRange(value, field.min, field.max),
+        requirement: () => `is not a number from ${field.min} to ${field.max} millimeters`,
+    };
+}
+
+// A plain number in a range, with no unit.
+function plainNumberRule(field) {
+    return {
+        label: field.label,
+        valid: (value) => isNumberInRange(value, field.min, field.max),
+        requirement: () => `is not a number from ${field.min} to ${field.max}`,
+    };
+}
+
+function choiceRule(label, choices) {
+    return {
+        label: label,
+        valid: (value) => choices.includes(value),
+        requirement: () => `is not one of: ${choices.join(", ")}`,
+    };
+}
+
+function colorRule(label) {
+    return {
+        label: label,
+        valid: (value) => typeof value === "string" && COLOR_PATTERN.test(value),
+        requirement: () => "is not a color like #1a2b3c",
+    };
+}
+
+const SETTING_RULES = {
+    unit:             choiceRule("Units", ["px", "mm"]),
+    dpi:              wholeNumberRule(numberFields.dpi),
+    cellWidth:        sizeRule(sizeFields.cellWidth),
+    cellHeight:       sizeRule(sizeFields.cellHeight),
+    columns:          wholeNumberRule(numberFields.columns),
+    rows:             wholeNumberRule(numberFields.rows),
+    fixedRatio: {
+        label: "Fixed ratio",
+        valid: (value) => typeof value === "boolean",
+        requirement: () => "is not true or false",
+    },
+    ratioMode:        choiceRule("Ratio entry", ["single", "pair"]),
+    ratioSingle:      plainNumberRule(ratioFields.ratioSingle),
+    ratioWidth:       plainNumberRule(ratioFields.ratioWidth),
+    ratioHeight:      plainNumberRule(ratioFields.ratioHeight),
+    fitMode:          choiceRule("Fit mode", ["stretch", "contain", "cover"]),
+    borderWidth:      sizeRule(sizeFields.borderWidth),
+    borderColor:      colorRule("Border color"),
+    backgroundColor:  colorRule("Background color"),
+    borderEmptyCells: {
+        label: "Borders around empty cells",
+        valid: (value) => typeof value === "boolean",
+        requirement: () => "is not true or false",
+    },
+    borderTarget:     choiceRule("Border placement", ["cell", "image"]),
+    paper:            choiceRule("Paper size", ["none", "custom", ...Object.keys(PAPER_SIZES)]),
+    customSide1:      millimeterRule(paperFields.customSide1),
+    customSide2:      millimeterRule(paperFields.customSide2),
+    orientation:      choiceRule("Orientation", ["portrait", "landscape"]),
+    margin:           millimeterRule(paperFields.margin),
+};
+
+// The default for one setting. Default sizes are stored in pixels, so when
+// the file uses millimeters we convert to the same physical size.
+function getDefaultFor(key, unit, dpi) {
+    const value = DEFAULT_SETTINGS[key];
+    if (unit === "mm" && key in sizeFields) {
+        return Number(pixelsToMm(value, dpi).toFixed(2));
+    }
+    return value;
+}
+
+// Formats a value for a warning message, with its unit where it has one.
+function formatSetting(key, value, unit) {
+    let text = JSON.stringify(value);
+    if (text === undefined) {
+        text = String(value);
+    }
+    if (text.length > 30) {
+        text = text.slice(0, 30) + "…";
+    }
+    if (typeof value === "number") {
+        if (key in sizeFields) {
+            text += ` ${unit}`;
+        } else if (key === "margin" || key.startsWith("customSide")) {
+            text += " mm";
+        } else if (key === "dpi") {
+            text += " DPI";
+        }
+    }
+    return text;
+}
+
+// Checks the settings from a file. Returns a complete, valid set of values
+// plus a list of warnings describing everything that was substituted or ignored.
+function checkLoadedSettings(rawSettings) {
+    const values = {};
+    const warnings = [];
+
+    // Keys are checked in DEFAULT_SETTINGS order: unit first, then DPI,
+    // because the other fields are validated in that unit.
+    for (const key of Object.keys(DEFAULT_SETTINGS)) {
+        const rule = SETTING_RULES[key];
+        const present = Object.hasOwn(rawSettings, key);
+        const raw = rawSettings[key];
+
+        if (present && rule.valid(raw, values.unit)) {
+            values[key] = raw;
+            continue;
+        }
+
+        const fallback = getDefaultFor(
+            key,
+            values.unit ?? DEFAULT_SETTINGS.unit,
+            values.dpi ?? DEFAULT_SETTINGS.dpi
+        );
+        values[key] = fallback;
+        const fallbackText = formatSetting(key, fallback, values.unit);
+
+        if (!present) {
+            warnings.push(`${rule.label}: not in the file; used the default, ${fallbackText}.`);
+        } else {
+            let text = `${rule.label}: the file has ${formatSetting(key, raw, values.unit)}, ` +
+                `which ${rule.requirement(values.unit)}; used the default, ${fallbackText}.`;
+            if (key === "unit") {
+                text += " Sizes in the file are read as pixels.";
+            }
+            warnings.push(text);
+        }
+    }
+
+    // Combined check 1: valid numbers can still make a canvas that's too big.
+    const toPixels = (value) => {
+        const pixels = values.unit === "mm" ? mmToPixels(value, values.dpi) : value;
+        return value > 0 && pixels < 1 ? 1 : pixels; // same rule as the form
+    };
+    const size = getCanvasSize({
+        columns: values.columns,
+        rows: values.rows,
+        cellWidth: toPixels(values.cellWidth),
+        cellHeight: toPixels(values.cellHeight),
+        borderWidth: toPixels(values.borderWidth),
+    });
+
+    if (isCanvasTooLarge(size)) {
+        for (const key of ["columns", "rows", "cellWidth", "cellHeight", "borderWidth"]) {
+            values[key] = getDefaultFor(key, values.unit, values.dpi);
+        }
+        warnings.push(
+            `Grid size: those columns, rows, cell size, and border width would make an output ` +
+            `image of ${size.width} × ${size.height} pixels, which is too large for browsers ` +
+            `to draw reliably; used the defaults for all five.`
+        );
+    }
+
+    // Combined check 2: the margins must leave room on the paper.
+    const paperMm = getPaperMm(values.paper, values.orientation, values.customSide1, values.customSide2);
+    if (paperMm && 2 * values.margin >= Math.min(paperMm.width, paperMm.height)) {
+        warnings.push(
+            `Margin: ${values.margin} mm leaves no room to print on this paper; ` +
+            `used the default, ${DEFAULT_SETTINGS.margin} mm.`
+        );
+        values.margin = DEFAULT_SETTINGS.margin;
+    }
+
+    // Combined check 3: a ratio made of two valid numbers can still be too extreme.
+    if (values.fixedRatio) {
+        const ratio = values.ratioMode === "single"
+            ? values.ratioSingle
+            : values.ratioWidth / values.ratioHeight;
+        if (ratio < MIN_RATIO || ratio > MAX_RATIO) {
+            warnings.push(
+                `Ratio: ${Number(ratio.toFixed(4))} is outside ${MIN_RATIO} to ${MAX_RATIO}; ` +
+                `used the default ratio, ${DEFAULT_SETTINGS.ratioWidth} : ${DEFAULT_SETTINGS.ratioHeight}.`
+            );
+            values.ratioSingle = DEFAULT_SETTINGS.ratioSingle;
+            values.ratioWidth = DEFAULT_SETTINGS.ratioWidth;
+            values.ratioHeight = DEFAULT_SETTINGS.ratioHeight;
+        }
+    }
+
+    // Anything in the file that this version doesn't know about.
+    const unknown = Object.keys(rawSettings).filter((key) => !Object.hasOwn(DEFAULT_SETTINGS, key));
+    if (unknown.length > 0) {
+        const shown = unknown.slice(0, 5).join(", ");
+        const more = unknown.length > 5 ? `, and ${unknown.length - 5} more` : "";
+        warnings.push(`Ignored ${unknown.length} setting${unknown.length === 1 ? "" : "s"} this version doesn't use: ${shown}${more}.`);
+    }
+
+    return { values, warnings };
+}
+
+function setRadio(name, value) {
+    document.querySelector(`input[name="${name}"][value="${value}"]`).checked = true;
+}
+
+// Puts a complete set of valid values into the form, then re-reads the form.
+function applySettingsToForm(v) {
+    setRadio("unit", v.unit);
+    // Tell onSettingsChange the unit change is already handled. Otherwise it would
+    // convert the numbers in the fields, overwriting the values set below.
+    currentUnit = v.unit;
+
+    numberFields.dpi.input.value = String(v.dpi);
+    numberFields.columns.input.value = String(v.columns);
+    numberFields.rows.input.value = String(v.rows);
+    fixedRatioInput.checked = v.fixedRatio;
+    setRadio("ratioMode", v.ratioMode);
+    ratioFields.ratioSingle.input.value = String(v.ratioSingle);
+    ratioFields.ratioWidth.input.value = String(v.ratioWidth);
+    ratioFields.ratioHeight.input.value = String(v.ratioHeight);
+
+    sizeFields.cellWidth.input.value = String(v.cellWidth);
+    sizeFields.cellHeight.input.value = String(v.cellHeight);
+    sizeFields.borderWidth.input.value = String(v.borderWidth);
+
+    setRadio("fitMode", v.fitMode);
+    document.getElementById("border-color").value = v.borderColor;
+    document.getElementById("background-color").value = v.backgroundColor;
+    document.getElementById("border-empty").checked = v.borderEmptyCells;
+    setRadio("borderTarget", v.borderTarget);
+
+    document.getElementById("paper-size").value = v.paper;
+    paperFields.customSide1.input.value = String(v.customSide1);
+    paperFields.customSide2.input.value = String(v.customSide2);
+    setRadio("orientation", v.orientation);
+    paperFields.margin.input.value = String(v.margin);
+
+    onSettingsChange(); // validates, updates limits, summary, and messages
+}
+
+// Shows a message plus an optional list of warnings under the preset buttons.
+function showPresetResult(kind, message, warnings = []) {
+    presetMessage.className = kind; // "", "warn", or "error"
+    presetMessage.textContent = message;
+
+    presetWarnings.textContent = "";
+    for (const warning of warnings) {
+        const item = document.createElement("li");
+        item.textContent = warning;
+        presetWarnings.append(item);
+    }
+}
+
+async function loadSettingsFile(file) {
+    if (file.size > MAX_SETTINGS_FILE_BYTES) {
+        showPresetResult("error", `${file.name} is too large to be a settings file. Nothing was loaded.`);
+        return;
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(await file.text());
+    } catch (error) {
+        showPresetResult("error", `${file.name} is not valid JSON, so nothing was loaded.`);
+        return;
+    }
+
+    if (!isPlainObject(parsed) || parsed.format !== SETTINGS_FILE_FORMAT) {
+        showPresetResult("error", `${file.name} is not a settings file saved by this program. Nothing was loaded.`);
+        return;
+    }
+    if (!isPlainObject(parsed.settings)) {
+        showPresetResult("error", `${file.name} has no settings section. Nothing was loaded.`);
+        return;
+    }
+
+    const { values, warnings } = checkLoadedSettings(parsed.settings);
+
+    // Version notes come first, since they may explain other warnings.
+    if (typeof parsed.version !== "number") {
+        warnings.unshift("The file has no version number.");
+    } else if (parsed.version > SETTINGS_FILE_VERSION) {
+        warnings.unshift(
+            `The file was saved by a newer version of this program (file version ${parsed.version}, ` +
+            `this program understands ${SETTINGS_FILE_VERSION}); some settings may not be understood.`
+        );
+    }
+
+    applySettingsToForm(values);
+
+    // Restore the preset name, or fall back to the filename without ".json".
+    presetNameInput.value = typeof parsed.name === "string" && parsed.name !== ""
+        ? parsed.name.slice(0, 80)
+        : file.name.replace(/\.json$/i, "");
+
+    // Safety net: the form should accept everything we just gave it.
+    if (!settingsValid) {
+        warnings.push("The form still rejected some loaded values. Check the red fields in the settings.");
+    }
+
+    if (warnings.length === 0) {
+        showPresetResult("", `Loaded ${file.name}. All settings were valid.`);
+    } else {
+        showPresetResult(
+            "warn",
+            `Loaded ${file.name} with ${warnings.length} warning${warnings.length === 1 ? "" : "s"}. ` +
+            `Check the list below, then save the preset again to keep the corrections:`,
+            warnings
+        );
+    }
+}
+
+document.getElementById("load-settings-button").addEventListener("click", () => {
+    loadSettingsInput.click();
+});
+
+loadSettingsInput.addEventListener("change", () => {
+    const file = loadSettingsInput.files[0];
+    loadSettingsInput.value = ""; // so choosing the same file again still triggers "change"
+    if (file) {
+        loadSettingsFile(file);
+    }
+});
+
 // --- Drawing ---
 
 // Browsers limit canvas size, and the limits vary. These are conservative
 // values that should work in all modern browsers.
 const MAX_CANVAS_SIDE = 16384;
 const MAX_CANVAS_AREA = 100000000;
+
+// True when an output image of this size would be too big for browsers to draw reliably.
+function isCanvasTooLarge(size) {
+    return size.width > MAX_CANVAS_SIDE ||
+        size.height > MAX_CANVAS_SIDE ||
+        size.width * size.height > MAX_CANVAS_AREA;
+}
 
 // Pixel size of one output image: cell interiors plus the shared border lines.
 function getCanvasSize(s) {
@@ -1080,4 +1722,4 @@ clearButton.addEventListener("click", clearImages);
 
 // --- Start up ---
 updateStatus();
-onSettingsChange(); // Read the initial form values so `settings` is populated.
+applySettingsToForm(DEFAULT_SETTINGS); // fills the form from the defaults, then reads it
