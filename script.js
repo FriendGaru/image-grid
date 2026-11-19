@@ -126,7 +126,16 @@ function renderThumbnails() {
 
         const img = document.createElement("img");
         img.src = image.url;
-        img.alt = image.file.name;
+        img.alt = ""; // the button around it carries the label
+
+        // The picture is a button: clicking it (or pressing Enter on it) opens the preview.
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "thumb-button";
+        open.title = "View full image";
+        open.setAttribute("aria-label", `View full image: ${image.file.name}`);
+        open.addEventListener("click", () => openLightbox(index));
+        open.append(img);
 
         const name = document.createElement("div");
         name.className = "name";
@@ -217,7 +226,7 @@ function renderThumbnails() {
         remove.title = "Remove this image";
         remove.addEventListener("click", () => removeImage(index));
 
-        card.append(img, name, size, controls, copiesLabel, skipNote, remove);
+        card.append(open, name, size, controls, copiesLabel, skipNote, remove);
         thumbnailList.append(card);
     });
 
@@ -317,24 +326,42 @@ for (const field of Object.values(paperFields)) {
     field.input.step = "0.1";
 }
 
-// A fixed cell shape is a ratio of width ÷ height: 4 : 3 and 1.3333 both mean landscape.
-const MIN_RATIO = 0.02; // 1 : 50
-const MAX_RATIO = 50;   // 50 : 1
+// --- Fixed cell ratio: the elements and limits ---
+//
+// The ratio is stored once, as a pair (width : height), in `ratioPair`. The boxes
+// on the page are views of it: the "one number" box shows width ÷ height. Typing
+// one number n stores the pair n : 1.
+//
+// With the ratio ON, the boxes are editable and the cell size follows them.
+// With the ratio OFF, the boxes are read-only and show the cell's current shape.
+
+const MIN_RATIO = 0.02;       // 1 : 50
+const MAX_RATIO = 50;         // 50 : 1
+const RATIO_PART_MIN = 0.01;  // limits for each number in "4 : 3"
+const RATIO_PART_MAX = 1000;
 
 const fixedRatioInput = document.getElementById("fixed-ratio");
+const ratioSingleInput = document.getElementById("ratio-single");
 
-// Each field belongs to one mode: "single" (one number) or "pair" (two numbers).
 const ratioFields = {
-    ratioSingle: { input: document.getElementById("ratio-single"), label: "Ratio",             min: MIN_RATIO, max: MAX_RATIO, mode: "single" },
-    ratioWidth:  { input: document.getElementById("ratio-width"),  label: "Ratio width part",  min: 0.01,      max: 1000,      mode: "pair" },
-    ratioHeight: { input: document.getElementById("ratio-height"), label: "Ratio height part", min: 0.01,      max: 1000,      mode: "pair" },
+    ratioWidth:  { input: document.getElementById("ratio-width"),  label: "Ratio width part",  min: RATIO_PART_MIN, max: RATIO_PART_MAX },
+    ratioHeight: { input: document.getElementById("ratio-height"), label: "Ratio height part", min: RATIO_PART_MIN, max: RATIO_PART_MAX },
 };
 
+const allRatioInputs = [ratioSingleInput, ratioFields.ratioWidth.input, ratioFields.ratioHeight.input];
+
+ratioSingleInput.min = String(MIN_RATIO);
+ratioSingleInput.max = String(MAX_RATIO);
 for (const field of Object.values(ratioFields)) {
     field.input.min = String(field.min);
     field.input.max = String(field.max);
-    field.input.step = "any"; // any decimal is fine, such as 1.3333
 }
+for (const input of allRatioInputs) {
+    input.step = "any"; // any decimal is fine, such as 1.3333
+}
+
+// The stored ratio. The page's ratio boxes are views of this.
+let ratioPair = { width: 4, height: 3 };
 
 // Returns the paper's { width, height } in mm for the chosen size and
 // orientation, or null when the user doesn't want a paper check.
@@ -361,73 +388,6 @@ function getSelectedUnit() {
     return document.querySelector('input[name="unit"]:checked').value;
 }
 
-function getRatioMode() {
-    return document.querySelector('input[name="ratioMode"]:checked').value;
-}
-
-// The ratio currently entered (width ÷ height), or null if it isn't usable yet.
-function getFixedRatio() {
-    const mode = getRatioMode();
-    const ratio = mode === "single"
-        ? ratioFields.ratioSingle.input.valueAsNumber
-        : ratioFields.ratioWidth.input.valueAsNumber / ratioFields.ratioHeight.input.valueAsNumber;
-    return Number.isFinite(ratio) && ratio >= MIN_RATIO && ratio <= MAX_RATIO ? ratio : null;
-}
-
-// Pixel sizes are whole numbers; millimeter sizes get 2 decimals.
-function roundSize(value, unit) {
-    return unit === "mm" ? Number(value.toFixed(2)) : Math.round(value);
-}
-
-// When the ratio is locked, updates the "other" size field after the user edits
-// `source`. Editing the width changes the height. Editing the height or the
-// ratio keeps the height and changes the width.
-function syncFixedRatio(source) {
-    if (!fixedRatioInput.checked) {
-        return;
-    }
-    const ratio = getFixedRatio();
-    if (ratio === null) {
-        return; // the ratio is empty or out of range; the form will flag it
-    }
-
-    const unit = getSelectedUnit();
-    const widthInput = sizeFields.cellWidth.input;
-    const heightInput = sizeFields.cellHeight.input;
-    const isRatioControl = source === fixedRatioInput ||
-        Object.values(ratioFields).some((field) => field.input === source);
-
-    if (source === widthInput) {
-        const width = widthInput.valueAsNumber;
-        if (Number.isFinite(width) && width > 0) {
-            heightInput.value = String(roundSize(width / ratio, unit));
-        }
-    } else if (source === heightInput || isRatioControl) {
-        const height = heightInput.valueAsNumber;
-        if (Number.isFinite(height) && height > 0) {
-            widthInput.value = String(roundSize(height * ratio, unit));
-        }
-    }
-}
-
-// Rewrites the ratio boxes when the user switches between one and two numbers.
-// The cell size is left alone.
-function convertRatioFields(newMode) {
-    if (newMode === "single") {
-        const width = ratioFields.ratioWidth.input.valueAsNumber;
-        const height = ratioFields.ratioHeight.input.valueAsNumber;
-        if (width > 0 && height > 0 && Number.isFinite(width / height)) {
-            ratioFields.ratioSingle.input.value = String(Number((width / height).toFixed(4)));
-        }
-    } else {
-        const ratio = ratioFields.ratioSingle.input.valueAsNumber;
-        if (Number.isFinite(ratio) && ratio > 0) {
-            ratioFields.ratioWidth.input.value = String(ratio);
-            ratioFields.ratioHeight.input.value = "1";
-        }
-    }
-}
-
 // Applies the right min/max/step to the size inputs and updates the unit labels.
 function applyUnitLimits(unit) {
     for (const field of Object.values(sizeFields)) {
@@ -452,6 +412,174 @@ function convertFieldsToUnit(unit) {
             ? String(Number(pixelsToMm(px, settings.dpi).toFixed(2)))
             : String(px);
     }
+}
+
+// --- Fixed cell ratio: the behavior ---
+
+function getRatioMode() {
+    return document.querySelector('input[name="ratioMode"]:checked').value; // "single" or "pair"
+}
+
+// When the ratio changes: which size stays put? "height" or "width".
+function getRatioKeep() {
+    return document.querySelector('input[name="ratioKeep"]:checked').value;
+}
+
+// Greatest common divisor, used to reduce 400 : 300 to 4 : 3.
+function gcd(a, b) {
+    while (b) {
+        [a, b] = [b, a % b];
+    }
+    return a;
+}
+
+// The whole number `value` becomes when multiplied by `scale`, or null if it isn't one.
+// (Tolerates floating-point noise, such as 53.33 × 100 = 5333.000000000001.)
+function toWhole(value, scale) {
+    const scaled = Math.round(value * scale);
+    return Math.abs(scaled - value * scale) < 1e-6 ? scaled : null;
+}
+
+// Pixel sizes are whole numbers; millimeter sizes get 2 decimals.
+function roundSize(value, unit) {
+    return unit === "mm" ? Number(value.toFixed(2)) : Math.round(value);
+}
+
+const ratioValue = (pair) => pair.width / pair.height;
+
+const isRatioInRange = (ratio) => Number.isFinite(ratio) && ratio >= MIN_RATIO && ratio <= MAX_RATIO;
+
+const isRatioPartInRange = (part) => Number.isFinite(part) && part >= RATIO_PART_MIN && part <= RATIO_PART_MAX;
+
+// A pair is usable when both numbers and the ratio between them are in range.
+function isUsableRatioPair(pair) {
+    return isRatioPartInRange(pair.width) && isRatioPartInRange(pair.height) &&
+        isRatioInRange(ratioValue(pair));
+}
+
+// The ratio typed into the boxes now in use, or null if it isn't usable.
+function readTypedRatio() {
+    if (getRatioMode() === "single") {
+        const number = ratioSingleInput.valueAsNumber;
+        return isRatioInRange(number) ? { width: number, height: 1 } : null;
+    }
+    const pair = {
+        width: ratioFields.ratioWidth.input.valueAsNumber,
+        height: ratioFields.ratioHeight.input.valueAsNumber,
+    };
+    return isUsableRatioPair(pair) ? pair : null;
+}
+
+// Writes a ratio into all three boxes, except `exceptInput` (the one being typed in).
+function showRatio(pair, exceptInput = null) {
+    const views = [
+        [ratioFields.ratioWidth.input, String(pair.width)],
+        [ratioFields.ratioHeight.input, String(pair.height)],
+        [ratioSingleInput, String(Number(ratioValue(pair).toFixed(4)))],
+    ];
+    for (const [input, text] of views) {
+        if (input !== exceptInput) {
+            input.value = text;
+        }
+    }
+}
+
+// The ratio of a width and height as a pair: reduced if they are whole numbers
+// (400 × 300 gives 4 : 3), otherwise "number : 1".
+function deriveRatioPair(width, height) {
+    const scale = getSelectedUnit() === "mm" ? 100 : 1; // millimeters have 2 decimals
+    const w = toWhole(width, scale);
+    const h = toWhole(height, scale);
+
+    if (w !== null && h !== null) {
+        const divisor = gcd(w, h);
+        const pair = { width: w / divisor, height: h / divisor };
+        if (isRatioPartInRange(pair.width) && isRatioPartInRange(pair.height)) {
+            return pair;
+        }
+    }
+    return { width: Number((width / height).toFixed(4)), height: 1 };
+}
+
+// With the ratio off, the boxes show the cell's current shape.
+function showCurrentShape() {
+    const width = sizeFields.cellWidth.input.valueAsNumber;
+    const height = sizeFields.cellHeight.input.valueAsNumber;
+    if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+        ratioPair = deriveRatioPair(width, height);
+        showRatio(ratioPair);
+    }
+}
+
+// Applies the stored ratio to the cell size after the ratio itself changed:
+// the chosen size stays, and the other follows.
+function applyRatioToSizes() {
+    if (!isUsableRatioPair(ratioPair)) {
+        return; // the form will flag the ratio
+    }
+    const ratio = ratioValue(ratioPair);
+    const unit = getSelectedUnit();
+    const widthInput = sizeFields.cellWidth.input;
+    const heightInput = sizeFields.cellHeight.input;
+    const width = widthInput.valueAsNumber;
+    const height = heightInput.valueAsNumber;
+
+    if (getRatioKeep() === "height") {
+        if (Number.isFinite(height) && height > 0) {
+            widthInput.value = String(roundSize(height * ratio, unit));
+        }
+    } else if (Number.isFinite(width) && width > 0) {
+        heightInput.value = String(roundSize(width / ratio, unit));
+    }
+}
+
+// Keeps the ratio and cell size linked after the user edits `source`.
+// Runs before validation, so the checks see the updated fields.
+function syncRatioAfterEdit(source) {
+    const widthInput = sizeFields.cellWidth.input;
+    const heightInput = sizeFields.cellHeight.input;
+
+    if (source.name === "ratioMode") {
+        showRatio(ratioPair); // switching views changes nothing but what is displayed
+        return;
+    }
+
+    if (!fixedRatioInput.checked) {
+        // Ratio off: the boxes just show the cell's current shape.
+        if (source === widthInput || source === heightInput || source === fixedRatioInput) {
+            showCurrentShape();
+        }
+        return;
+    }
+
+    // Ratio on from here.
+    if (source === widthInput || source === heightInput) {
+        if (!isUsableRatioPair(ratioPair)) {
+            return;
+        }
+        const ratio = ratioValue(ratioPair);
+        const unit = getSelectedUnit();
+        const width = widthInput.valueAsNumber;
+        const height = heightInput.valueAsNumber;
+
+        if (source === widthInput && Number.isFinite(width) && width > 0) {
+            heightInput.value = String(roundSize(width / ratio, unit));
+        } else if (source === heightInput && Number.isFinite(height) && height > 0) {
+            widthInput.value = String(roundSize(height * ratio, unit));
+        }
+        return;
+    }
+
+    if (allRatioInputs.includes(source)) {
+        const typed = readTypedRatio();
+        if (typed === null) {
+            return; // not usable yet (empty, or out of range); the form will flag it
+        }
+        ratioPair = typed;
+        showRatio(ratioPair, source); // update the other boxes, not the one being typed in
+        applyRatioToSizes();
+    }
+    // Ticking the box on needs nothing: the boxes already show the current shape.
 }
 
 // Reads every control and validates it. Returns pixel values and any errors.
@@ -518,48 +646,53 @@ function readSettings() {
         }
     }
 
+    // Fixed cell ratio. The stored pair is always the value in use. While the ratio
+    // is off its boxes only display the cell's shape, so there is nothing to check.
+    values.fixedRatio = fixedRatioInput.checked;
+    values.ratioMode = getRatioMode();
+    values.ratioKeep = getRatioKeep();
+    values.ratioWidth = ratioPair.width;
+    values.ratioHeight = ratioPair.height;
+    values.ratio = values.fixedRatio ? ratioValue(ratioPair) : null;
+
+    for (const input of allRatioInputs) {
+        input.classList.remove("invalid");
+    }
+
+    if (values.fixedRatio) {
+        if (values.ratioMode === "single") {
+            const valid = isRatioInRange(ratioSingleInput.valueAsNumber);
+            ratioSingleInput.classList.toggle("invalid", !valid);
+            if (!valid) {
+                errors.push(`Ratio must be a number from ${MIN_RATIO} to ${MAX_RATIO}.`);
+            }
+        } else {
+            let partsValid = true;
+            for (const field of Object.values(ratioFields)) {
+                const valid = isRatioPartInRange(field.input.valueAsNumber);
+                field.input.classList.toggle("invalid", !valid);
+                if (!valid) {
+                    partsValid = false;
+                    errors.push(`${field.label} must be a number from ${field.min} to ${field.max}.`);
+                }
+            }
+            if (partsValid) {
+                const typedRatio = ratioFields.ratioWidth.input.valueAsNumber /
+                    ratioFields.ratioHeight.input.valueAsNumber;
+                if (!isRatioInRange(typedRatio)) {
+                    ratioFields.ratioWidth.input.classList.add("invalid");
+                    ratioFields.ratioHeight.input.classList.add("invalid");
+                    errors.push(`The ratio must be between ${MIN_RATIO} (1 : 50) and ${MAX_RATIO} (50 : 1).`);
+                }
+            }
+        }
+    }
+
     if (errors.length === 0) {
         values.paperMm = getPaperMm(values.paper, values.orientation, values.customSide1, values.customSide2);
         if (values.paperMm &&
             2 * values.margin >= Math.min(values.paperMm.width, values.paperMm.height)) {
             errors.push("The margins leave no room to print on this paper.");
-        }
-    }
-
-    // Fixed cell ratio. Only the fields for the chosen mode are checked.
-    values.fixedRatio = fixedRatioInput.checked;
-    values.ratioMode = getRatioMode();
-    let ratioFieldsValid = true;
-
-    for (const [key, field] of Object.entries(ratioFields)) {
-        const needed = values.fixedRatio && field.mode === values.ratioMode;
-        if (!needed) {
-            field.input.classList.remove("invalid");
-            continue;
-        }
-
-        const number = field.input.valueAsNumber;
-        const valid = Number.isFinite(number) && number >= field.min && number <= field.max;
-        field.input.classList.toggle("invalid", !valid);
-
-        if (valid) {
-            values[key] = number;
-        } else {
-            ratioFieldsValid = false;
-            errors.push(`${field.label} must be a number from ${field.min} to ${field.max}.`);
-        }
-    }
-
-    // Two valid numbers can still make a ratio that's too extreme.
-    if (values.fixedRatio && ratioFieldsValid) {
-        const ratio = values.ratioMode === "single"
-            ? values.ratioSingle
-            : values.ratioWidth / values.ratioHeight;
-        if (ratio < MIN_RATIO || ratio > MAX_RATIO) {
-            errors.push(`The ratio must be between ${MIN_RATIO} (1 : 50) and ${MAX_RATIO} (50 : 1).`);
-            for (const field of Object.values(ratioFields)) {
-                field.input.classList.toggle("invalid", field.mode === values.ratioMode);
-            }
         }
     }
 
@@ -595,11 +728,25 @@ function readSettings() {
 }
 
 function onSettingsChange() {
-    // Show the ratio controls only when the lock is on, and only the boxes for the chosen mode.
-    document.getElementById("ratio-controls").hidden = !fixedRatioInput.checked;
+    // Show only the ratio boxes for the chosen way of entering it.
     const pairMode = getRatioMode() === "pair";
     document.getElementById("ratio-single-group").hidden = pairMode;
     document.getElementById("ratio-pair-group").hidden = !pairMode;
+
+    // The ratio boxes are editable only while the ratio is on.
+    const ratioOn = fixedRatioInput.checked;
+    for (const input of allRatioInputs) {
+        input.readOnly = !ratioOn;
+    }
+    document.getElementById("ratio-keep-group").hidden = !ratioOn;
+    document.getElementById("swap-ratio-button").disabled = !ratioOn;
+
+    const keep = getRatioKeep();
+    document.getElementById("ratio-note").textContent = ratioOn
+        ? `Editing the width changes the height, and the other way round. ` +
+        `Changing the ratio keeps the ${keep} and changes the ${keep === "height" ? "width" : "height"}.`
+        : "These boxes show the cell's current shape. Tick the box to keep that shape fixed.";
+
     document.getElementById("custom-paper").hidden =
         document.getElementById("paper-size").value !== "custom";
 
@@ -609,6 +756,9 @@ function onSettingsChange() {
     if (unit !== currentUnit) {
         convertFieldsToUnit(unit);
         currentUnit = unit;
+        if (!ratioOn) {
+            showCurrentShape(); // the converted sizes may differ slightly
+        }
     }
 
     const { values, errors } = readSettings();
@@ -638,6 +788,17 @@ function updateSummary() {
         `Each output image is ${size.width} × ${size.height} px, printing at ` +
         `${mm(size.width)} × ${mm(size.height)} mm.`,
     ];
+
+    // Whole pixels can't always match the ratio exactly. Say so when it's noticeable.
+    if (s.fixedRatio && s.ratio) {
+        const actual = s.cellWidth / s.cellHeight;
+        if (Math.abs(actual - s.ratio) / s.ratio > 0.01) {
+            lines.push(
+                `Whole pixels can't match the ratio exactly: the actual cell shape is ` +
+                `${Number(actual.toFixed(4))}, and the requested ratio is ${Number(s.ratio.toFixed(4))}.`
+            );
+        }
+    }
 
     const gridText = `${s.columns} × ${s.rows} grid (${cellsPerImage} cells per output image)`;
 
@@ -728,11 +889,7 @@ function updatePaperCheck() {
 
 // One listener for the whole section: "input" events bubble up from every control.
 settingsSection.addEventListener("input", (event) => {
-    if (event.target.name === "ratioMode") {
-        convertRatioFields(event.target.value); // changes the ratio boxes, not the cell size
-    } else {
-        syncFixedRatio(event.target); // updates the other size field when the lock is on
-    }
+    syncRatioAfterEdit(event.target); // updates linked values first, so validation sees them
     onSettingsChange();
 });
 
@@ -744,6 +901,32 @@ document.getElementById("swap-button").addEventListener("click", () => {
     [columnsInput.value, rowsInput.value] = [rowsInput.value, columnsInput.value];
 
     // Setting .value from code doesn't fire "input", so trigger the update ourselves.
+    onSettingsChange();
+});
+
+// Swaps the cell's width and height. With the ratio on, the shape is turned on its
+// side, so the ratio flips too: 4 : 3 becomes 3 : 4 and the cell stays consistent.
+document.getElementById("swap-size-button").addEventListener("click", () => {
+    const widthInput = sizeFields.cellWidth.input;
+    const heightInput = sizeFields.cellHeight.input;
+
+    [widthInput.value, heightInput.value] = [heightInput.value, widthInput.value];
+
+    if (fixedRatioInput.checked) {
+        ratioPair = { width: ratioPair.height, height: ratioPair.width };
+        showRatio(ratioPair);
+    } else {
+        showCurrentShape();
+    }
+    onSettingsChange();
+});
+
+// Flips the ratio (4 : 3 becomes 3 : 4). Like any ratio change, the chosen size
+// stays and the other follows. The button is disabled while the ratio is off.
+document.getElementById("swap-ratio-button").addEventListener("click", () => {
+    ratioPair = { width: ratioPair.height, height: ratioPair.width };
+    showRatio(ratioPair);
+    applyRatioToSizes();
     onSettingsChange();
 });
 
@@ -764,9 +947,9 @@ const DEFAULT_SETTINGS = {
     rows: 3,
     fixedRatio: false,
     ratioMode: "pair",
-    ratioSingle: 1.3333,
     ratioWidth: 4,
     ratioHeight: 3,
+    ratioKeep: "height",
     fitMode: "stretch",
     borderWidth: 2,
     borderColor: "#000000",
@@ -792,14 +975,11 @@ function getFormValues() {
     const numberOrDefault = (input, fallback) =>
         Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : fallback;
 
-    // Ratio boxes that are hidden might hold junk, so fall back to the default.
-    const ratioOrDefault = (key) => {
-        const field = ratioFields[key];
-        const number = field.input.valueAsNumber;
-        return Number.isFinite(number) && number >= field.min && number <= field.max
-            ? number
-            : DEFAULT_SETTINGS[key];
-    };
+    // While the ratio is off, the stored pair is just the cell's shape, which can be
+    // extreme. Save the default instead of something the loader would reject.
+    const ratioToSave = isUsableRatioPair(ratioPair)
+        ? ratioPair
+        : { width: DEFAULT_SETTINGS.ratioWidth, height: DEFAULT_SETTINGS.ratioHeight };
 
     return {
         unit: getSelectedUnit(),
@@ -810,9 +990,9 @@ function getFormValues() {
         rows: numberFields.rows.input.valueAsNumber,
         fixedRatio: fixedRatioInput.checked,
         ratioMode: getRatioMode(),
-        ratioSingle: ratioOrDefault("ratioSingle"),
-        ratioWidth: ratioOrDefault("ratioWidth"),
-        ratioHeight: ratioOrDefault("ratioHeight"),
+        ratioWidth: ratioToSave.width,
+        ratioHeight: ratioToSave.height,
+        ratioKeep: getRatioKeep(),
         fitMode: document.querySelector('input[name="fitMode"]:checked').value,
         borderWidth: sizeFields.borderWidth.input.valueAsNumber,
         borderColor: document.getElementById("border-color").value,
@@ -963,6 +1143,14 @@ function colorRule(label) {
     };
 }
 
+function booleanRule(label) {
+    return {
+        label: label,
+        valid: (value) => typeof value === "boolean",
+        requirement: () => "is not true or false",
+    };
+}
+
 const SETTING_RULES = {
     unit:             choiceRule("Units", ["px", "mm"]),
     dpi:              wholeNumberRule(numberFields.dpi),
@@ -970,24 +1158,16 @@ const SETTING_RULES = {
     cellHeight:       sizeRule(sizeFields.cellHeight),
     columns:          wholeNumberRule(numberFields.columns),
     rows:             wholeNumberRule(numberFields.rows),
-    fixedRatio: {
-        label: "Fixed ratio",
-        valid: (value) => typeof value === "boolean",
-        requirement: () => "is not true or false",
-    },
+    fixedRatio:       booleanRule("Fixed ratio"),
     ratioMode:        choiceRule("Ratio entry", ["single", "pair"]),
-    ratioSingle:      plainNumberRule(ratioFields.ratioSingle),
     ratioWidth:       plainNumberRule(ratioFields.ratioWidth),
     ratioHeight:      plainNumberRule(ratioFields.ratioHeight),
+    ratioKeep:        choiceRule("Ratio change keeps", ["height", "width"]),
     fitMode:          choiceRule("Fit mode", ["stretch", "contain", "cover"]),
     borderWidth:      sizeRule(sizeFields.borderWidth),
     borderColor:      colorRule("Border color"),
     backgroundColor:  colorRule("Background color"),
-    borderEmptyCells: {
-        label: "Borders around empty cells",
-        valid: (value) => typeof value === "boolean",
-        requirement: () => "is not true or false",
-    },
+    borderEmptyCells: booleanRule("Borders around empty cells"),
     borderTarget:     choiceRule("Border placement", ["cell", "image"]),
     paper:            choiceRule("Paper size", ["none", "custom", ...Object.keys(PAPER_SIZES)]),
     customSide1:      millimeterRule(paperFields.customSide1),
@@ -1065,7 +1245,64 @@ function checkLoadedSettings(rawSettings) {
         }
     }
 
-    // Combined check 1: valid numbers can still make a canvas that's too big.
+    // Combined check 1: two valid numbers can still make a ratio that's too extreme.
+    if (values.fixedRatio) {
+        const ratio = values.ratioWidth / values.ratioHeight;
+        if (!isRatioInRange(ratio)) {
+            warnings.push(
+                `Ratio: ${Number(ratio.toFixed(4))} is outside ${MIN_RATIO} to ${MAX_RATIO}; ` +
+                `used the default ratio, ${DEFAULT_SETTINGS.ratioWidth} : ${DEFAULT_SETTINGS.ratioHeight}.`
+            );
+            values.ratioWidth = DEFAULT_SETTINGS.ratioWidth;
+            values.ratioHeight = DEFAULT_SETTINGS.ratioHeight;
+        }
+    }
+
+    // Combined check 2: with a fixed ratio, the cell size has to match it.
+    // If it doesn't, the size the file says to keep stays, and the other is recalculated.
+    // If the recalculated size would be out of range, the fixed ratio is turned off instead.
+    const reconcileRatio = () => {
+        if (!values.fixedRatio) {
+            return;
+        }
+        const unit = values.unit;
+        const ratio = values.ratioWidth / values.ratioHeight;
+        const step = unit === "mm" ? 0.01 : 1; // the smallest size difference the form can hold
+        const tolerance = (step / 2) * (1 + ratio) + 1e-9;
+
+        if (Math.abs(values.cellWidth - values.cellHeight * ratio) <= tolerance) {
+            return; // already matches, to within rounding
+        }
+
+        const keepHeight = values.ratioKeep === "height";
+        const changedKey = keepHeight ? "cellWidth" : "cellHeight";
+        const keptName = keepHeight ? "height" : "width";
+        const changedName = keepHeight ? "width" : "height";
+        const newValue = keepHeight
+            ? roundSize(values.cellHeight * ratio, unit)
+            : roundSize(values.cellWidth / ratio, unit);
+
+        const sizeText = `${values.cellWidth} × ${values.cellHeight} ${unit}`;
+        const ratioText = `${values.ratioWidth} : ${values.ratioHeight}`;
+
+        if (SETTING_RULES[changedKey].valid(newValue, unit)) {
+            warnings.push(
+                `Cell shape: the cell size in the file (${sizeText}) does not match its fixed ratio ` +
+                `(${ratioText}); kept the ${keptName} and set the ${changedName} to ${newValue} ${unit}.`
+            );
+            values[changedKey] = newValue;
+        } else {
+            warnings.push(
+                `Cell shape: the cell size in the file (${sizeText}) does not match its fixed ratio ` +
+                `(${ratioText}), and the matching ${changedName} would be out of range; ` +
+                `turned the fixed ratio off and kept the cell size.`
+            );
+            values.fixedRatio = false;
+        }
+    };
+    reconcileRatio();
+
+    // Combined check 3: valid numbers can still make a canvas that's too big.
     const toPixels = (value) => {
         const pixels = values.unit === "mm" ? mmToPixels(value, values.dpi) : value;
         return value > 0 && pixels < 1 ? 1 : pixels; // same rule as the form
@@ -1087,9 +1324,10 @@ function checkLoadedSettings(rawSettings) {
             `image of ${size.width} × ${size.height} pixels, which is too large for browsers ` +
             `to draw reliably; used the defaults for all five.`
         );
+        reconcileRatio(); // the default size may no longer match the ratio
     }
 
-    // Combined check 2: the margins must leave room on the paper.
+    // Combined check 4: the margins must leave room on the paper.
     const paperMm = getPaperMm(values.paper, values.orientation, values.customSide1, values.customSide2);
     if (paperMm && 2 * values.margin >= Math.min(paperMm.width, paperMm.height)) {
         warnings.push(
@@ -1097,22 +1335,6 @@ function checkLoadedSettings(rawSettings) {
             `used the default, ${DEFAULT_SETTINGS.margin} mm.`
         );
         values.margin = DEFAULT_SETTINGS.margin;
-    }
-
-    // Combined check 3: a ratio made of two valid numbers can still be too extreme.
-    if (values.fixedRatio) {
-        const ratio = values.ratioMode === "single"
-            ? values.ratioSingle
-            : values.ratioWidth / values.ratioHeight;
-        if (ratio < MIN_RATIO || ratio > MAX_RATIO) {
-            warnings.push(
-                `Ratio: ${Number(ratio.toFixed(4))} is outside ${MIN_RATIO} to ${MAX_RATIO}; ` +
-                `used the default ratio, ${DEFAULT_SETTINGS.ratioWidth} : ${DEFAULT_SETTINGS.ratioHeight}.`
-            );
-            values.ratioSingle = DEFAULT_SETTINGS.ratioSingle;
-            values.ratioWidth = DEFAULT_SETTINGS.ratioWidth;
-            values.ratioHeight = DEFAULT_SETTINGS.ratioHeight;
-        }
     }
 
     // Anything in the file that this version doesn't know about.
@@ -1140,15 +1362,20 @@ function applySettingsToForm(v) {
     numberFields.dpi.input.value = String(v.dpi);
     numberFields.columns.input.value = String(v.columns);
     numberFields.rows.input.value = String(v.rows);
-    fixedRatioInput.checked = v.fixedRatio;
-    setRadio("ratioMode", v.ratioMode);
-    ratioFields.ratioSingle.input.value = String(v.ratioSingle);
-    ratioFields.ratioWidth.input.value = String(v.ratioWidth);
-    ratioFields.ratioHeight.input.value = String(v.ratioHeight);
 
     sizeFields.cellWidth.input.value = String(v.cellWidth);
     sizeFields.cellHeight.input.value = String(v.cellHeight);
     sizeFields.borderWidth.input.value = String(v.borderWidth);
+
+    // The ratio. With it off, the boxes show the cell's shape (and the saved pair is unused).
+    fixedRatioInput.checked = v.fixedRatio;
+    setRadio("ratioMode", v.ratioMode);
+    setRadio("ratioKeep", v.ratioKeep);
+    ratioPair = { width: v.ratioWidth, height: v.ratioHeight };
+    showRatio(ratioPair);
+    if (!v.fixedRatio) {
+        showCurrentShape();
+    }
 
     setRadio("fitMode", v.fitMode);
     document.getElementById("border-color").value = v.borderColor;
@@ -1719,6 +1946,111 @@ window.addEventListener("drop", (event) => event.preventDefault());
 
 // --- Clear ---
 clearButton.addEventListener("click", clearImages);
+
+// --- Image preview (lightbox) ---
+
+const lightbox = document.getElementById("lightbox");
+const lightboxViewport = document.getElementById("lightbox-viewport");
+const lightboxFrame = document.getElementById("lightbox-frame");
+const lightboxImage = document.getElementById("lightbox-image");
+const lightboxTitle = document.getElementById("lightbox-title");
+const lightboxDetails = document.getElementById("lightbox-details");
+const lightboxPrev = document.getElementById("lightbox-prev");
+const lightboxNext = document.getElementById("lightbox-next");
+
+let lightboxIndex = 0; // which entry of `images` is showing
+
+// Sizes the picture to fit the viewing area. The frame gets the ROTATED size, since
+// that is the space the turned picture takes up. The picture inside keeps its own
+// (unrotated) size and is centered and turned within the frame.
+function layoutLightboxImage() {
+    const image = images[lightboxIndex];
+    const availableWidth = lightboxViewport.clientWidth;
+    const availableHeight = lightboxViewport.clientHeight;
+    if (!image || availableWidth === 0 || availableHeight === 0) {
+        return;
+    }
+
+    const rotated = getRotatedSize(image);
+    // Fit inside the area, but never enlarge past the real size (the "1").
+    const scale = Math.min(availableWidth / rotated.width, availableHeight / rotated.height, 1);
+
+    lightboxFrame.style.width = `${Math.round(rotated.width * scale)}px`;
+    lightboxFrame.style.height = `${Math.round(rotated.height * scale)}px`;
+
+    lightboxImage.style.width = `${Math.round(image.width * scale)}px`;
+    lightboxImage.style.height = `${Math.round(image.height * scale)}px`;
+    lightboxImage.style.transform = `translate(-50%, -50%) rotate(${image.rotation}deg)`;
+}
+
+// Shows the image at `index`. Going past either end wraps around.
+function showLightboxImage(index) {
+    if (images.length === 0) {
+        lightbox.close();
+        return;
+    }
+
+    lightboxIndex = (index + images.length) % images.length;
+    const image = images[lightboxIndex];
+
+    const rotationText = image.rotation === 0 ? "not rotated" : `rotated ${image.rotation}° clockwise`;
+    const copiesText = image.copies === 0
+        ? "skipped (0 copies)"
+        : `${image.copies} ${image.copies === 1 ? "copy" : "copies"}`;
+
+    lightboxImage.src = image.url;
+    lightboxImage.alt = image.file.name;
+    lightboxTitle.textContent = image.file.name;
+    lightboxDetails.textContent =
+        `Image ${lightboxIndex + 1} of ${images.length} · ${image.width} × ${image.height} px · ` +
+        `${formatBytes(image.file.size)} · ${rotationText} · ${copiesText}`;
+
+    lightboxPrev.disabled = images.length < 2;
+    lightboxNext.disabled = images.length < 2;
+
+    layoutLightboxImage();
+}
+
+function openLightbox(index) {
+    lightbox.showModal();      // first, so the viewing area has a size to measure
+    showLightboxImage(index);
+}
+
+document.getElementById("lightbox-close").addEventListener("click", () => lightbox.close());
+lightboxPrev.addEventListener("click", () => showLightboxImage(lightboxIndex - 1));
+lightboxNext.addEventListener("click", () => showLightboxImage(lightboxIndex + 1));
+
+// A click on the dimmed backdrop or on the empty space around the picture closes it.
+// (Clicks outside a dialog's box are reported with the dialog itself as the target.)
+lightbox.addEventListener("click", (event) => {
+    if (event.target === lightbox || event.target === lightboxViewport) {
+        lightbox.close();
+    }
+});
+
+// Esc closes the dialog by itself. The arrow keys move between images.
+lightbox.addEventListener("keydown", (event) => {
+    if (images.length < 2) {
+        return;
+    }
+    if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        showLightboxImage(lightboxIndex - 1);
+    } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        showLightboxImage(lightboxIndex + 1);
+    }
+});
+
+// The viewing area changes size with the window, so fit the picture again.
+window.addEventListener("resize", () => {
+    if (lightbox.open) {
+        layoutLightboxImage();
+    }
+});
+
+// Let go of the picture when closed; the image's blob URL may be revoked later.
+lightbox.addEventListener("close", () => lightboxImage.removeAttribute("src"));
 
 // --- Start up ---
 updateStatus();

@@ -4,7 +4,7 @@
    Contents
      1. Design tokens   every color, size, and spacing value, named once
      2. Base            page-wide rules
-     3. Components      buttons, focus ring, invalid fields
+     3. Components      buttons, focus ring, invalid and read-only fields
      4. Page areas      upload, thumbnails, presets, settings, output
                         (in page order)
 
@@ -29,7 +29,7 @@
     /* Lines and surfaces */
     --color-border:        #d0d0d0;   /* light gray; sections, fieldsets, buttons, thumbnails */
     --color-border-dashed: #888;      /* medium gray; the drop zone */
-    --color-placeholder:   #f4f4f4;   /* very light gray; behind thumbnails */
+    --color-placeholder:   #f4f4f4;   /* very light gray; behind thumbnails, read-only fields */
 
     /* Buttons */
     --color-button:        #f6f6f6;   /* very light gray */
@@ -53,6 +53,11 @@
     /* Keyboard focus ring */
     --color-focus-ring:    #7ab7ff;   /* light sky blue */
 
+    /* Image preview (lightbox) */
+    --color-lightbox:       #1a1a1a;              /* very dark gray; the preview panel */
+    --color-backdrop:       rgba(0, 0, 0, 0.75);  /* black at 75% opacity; dims the page behind it */
+    --color-text-on-dark-muted: #bbb;             /* light gray, for secondary text on dark */
+    --color-on-dark-hover:  rgba(255, 255, 255, 0.15);  /* white at 15% opacity */
 
     /* --- Spacing: use these for margins, padding, and gaps --- */
     --space-xs:  0.25rem;
@@ -66,7 +71,7 @@
     /* --- Typography --- */
     --font-family:        system-ui, sans-serif;
     --font-size-small:    0.75rem;   /* thumbnail captions */
-    --font-size-detail:   0.85rem;   /* output card details */
+    --font-size-detail:   0.85rem;   /* output card details, field notes */
     --font-size-base:     1rem;
     --font-size-icon:     1.1rem;    /* symbol buttons such as ⇄ */
     --font-size-heading:  1.2rem;
@@ -101,6 +106,11 @@
 
     --opacity-skipped:   0.35;   /* thumbnails set to 0 copies */
     --opacity-disabled:  0.5;
+
+    --lightbox-width:      min(95vw, 1600px);
+    --lightbox-height:     92dvh;
+    --lightbox-nav-size:   3rem;
+    --font-size-nav:       1.75rem;   /* the ‹ › arrows */
 }
 
 
@@ -160,7 +170,7 @@ button {
     cursor: pointer;
 }
 
-button:not(.remove):hover:not(:disabled) {
+button:not(.remove, .thumb-button, .lightbox-button):hover:not(:disabled) {
     background: var(--color-button-hover);
 }
 
@@ -181,6 +191,13 @@ button:disabled {
     background: var(--color-accent-hover);
 }
 
+/* Small ⇄ buttons that swap two values (columns and rows, width and height, ratio parts) */
+.swap-button {
+    margin: 0 var(--space-lg) 0 0;
+    padding: var(--button-padding-compact);
+    font-size: var(--font-size-icon);
+}
+
 /* --- Keyboard focus --- */
 
 :focus-visible {
@@ -188,11 +205,18 @@ button:disabled {
     outline-offset: var(--focus-ring-offset);
 }
 
-/* --- Invalid form fields (the class is toggled by script.js) --- */
+/* --- Form field states --- */
 
+/* The class is toggled by script.js */
 input.invalid {
     border: var(--line-width-emphasis) solid var(--color-danger);
     background: var(--color-danger-soft);
+}
+
+/* Fields that only display a value (the ratio boxes while the ratio is off) */
+input[readonly] {
+    background: var(--color-placeholder);
+    color: var(--color-text-muted);
 }
 
 
@@ -239,6 +263,22 @@ input.invalid {
     font-size: var(--font-size-small);
     text-align: center;
     overflow: hidden;
+}
+
+/* The picture is a button that opens the preview. Strip the default button look. */
+.thumbnail .thumb-button {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    cursor: zoom-in;
+}
+
+/* Draw the focus ring inside the card, where overflow: hidden can't clip it */
+.thumbnail .thumb-button:focus-visible {
+    outline-offset: calc(var(--focus-ring-width) * -1);
 }
 
 /* Square, so a rotated image always fits inside its own box. */
@@ -394,17 +434,16 @@ fieldset label:has(input[type="radio"]) {
     width: var(--number-input-width);
 }
 
-#swap-button {
-    margin: 0 var(--space-lg) 0 0;
-    padding: var(--button-padding-compact);
-    font-size: var(--font-size-icon);
+/* A row of short radio options, side by side instead of stacked */
+.inline-options {
+    margin: var(--space-xs) 0;
 }
 
-/* Ratio controls appear under the lock checkbox when it's on */
-#ratio-controls {
-    margin-top: var(--space-xs);
+.inline-options label:has(input[type="radio"]) {
+    display: inline-block;
 }
 
+/* Small explanatory text under a control */
 .field-note {
     margin: var(--space-xs) 0 0;
     font-size: var(--font-size-detail);
@@ -477,4 +516,109 @@ fieldset label:has(input[type="radio"]) {
     max-width: 100%;
     height: auto;
     border: var(--line-width) solid var(--color-border);
+}
+
+/* --------------------------------------------------------------------------
+   Image preview (lightbox)
+   -------------------------------------------------------------------------- */
+
+#lightbox {
+    width: var(--lightbox-width);
+    max-width: none;
+    height: var(--lightbox-height);
+    max-height: none;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--color-lightbox);
+    color: var(--color-text-on-dark);
+}
+
+/* Only lay out as a column while open; a closed dialog must stay hidden */
+#lightbox[open] {
+    display: flex;
+    flex-direction: column;
+}
+
+/* The dimmed page behind it. (Needs a current browser: older ones
+   don't let a backdrop use CSS variables.) */
+#lightbox::backdrop {
+    background: var(--color-backdrop);
+}
+
+.lightbox-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+}
+
+.lightbox-title {
+    margin: 0;
+    font-weight: var(--font-weight-strong);
+    overflow-wrap: anywhere;
+}
+
+.lightbox-details {
+    margin: 0;
+    font-size: var(--font-size-detail);
+    color: var(--color-text-on-dark-muted);
+}
+
+/* Previous, picture, next, in one row that fills the rest of the panel */
+.lightbox-stage {
+    flex: 1;
+    min-height: 0;   /* lets the row shrink instead of pushing the panel taller */
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 0 var(--space-sm) var(--space-md);
+}
+
+/* script.js measures this area to decide how large to show the picture */
+#lightbox-viewport {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+/* script.js sets the frame to the rotated picture's size, and the picture to its own
+   unrotated size; the picture is centered in the frame and turned there. */
+#lightbox-frame {
+    position: relative;
+    flex: none;
+}
+
+#lightbox-image {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    max-width: none;
+}
+
+/* Buttons on the dark panel (close, previous, next) */
+.lightbox-button {
+    flex: none;
+    background: transparent;
+    border-color: var(--color-text-on-dark-muted);
+    color: var(--color-text-on-dark);
+}
+
+.lightbox-button:hover:not(:disabled) {
+    background: var(--color-on-dark-hover);
+}
+
+.lightbox-nav {
+    width: var(--lightbox-nav-size);
+    height: var(--lightbox-nav-size);
+    padding: 0;
+    border-radius: var(--radius-round);
+    font-size: var(--font-size-nav);
+    line-height: 1;
 }

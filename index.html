@@ -57,33 +57,50 @@
         </fieldset>
 
         <fieldset>
-            <legend>Cell size (<span class="unit-name">pixels</span>)</legend>
-            <label>Width <input type="number" id="cell-width"></label>
-            <label>Height <input type="number" id="cell-height"></label>
-        </fieldset>
+            <legend>Cell size (<span class="unit-name">pixels</span>) and shape</legend>
 
-        <fieldset>
-            <legend>Cell shape</legend>
-            <label><input type="checkbox" id="fixed-ratio"> Keep a fixed ratio (width ÷ height)</label>
-            <div id="ratio-controls" hidden>
-                <label><input type="radio" name="ratioMode" value="single"> One number, such as 1.333</label>
-                <label><input type="radio" name="ratioMode" value="pair"> Two numbers, such as 4 : 3</label>
+            <div>
+                <label>Width <input type="number" id="cell-width"></label>
+                <button type="button" id="swap-size-button" class="swap-button" title="Swap width and height" aria-label="Swap width and height">⇄</button>
+                <label>Height <input type="number" id="cell-height"></label>
+            </div>
+
+            <div>
+                <label><input type="checkbox" id="fixed-ratio"> Keep a fixed ratio (width ÷ height)</label>
+            </div>
+
+            <!-- The ratio boxes are always shown. With the ratio off they are
+                 read-only and show the cell's current shape. -->
+            <div id="ratio-controls">
+                <div class="inline-options" role="radiogroup" aria-label="How to show the ratio">
+                    <label><input type="radio" name="ratioMode" value="single"> One number (1.333)</label>
+                    <label><input type="radio" name="ratioMode" value="pair"> Two numbers (4 : 3)</label>
+                </div>
+
                 <span id="ratio-single-group" hidden>
-            <label>Ratio <input type="number" id="ratio-single"></label>
-        </span>
+                        <label>Ratio <input type="number" id="ratio-single"></label>
+                    </span>
                 <span id="ratio-pair-group" hidden>
-            <label>Ratio <input type="number" id="ratio-width" aria-label="Ratio, width part"></label>
-            :
-            <input type="number" id="ratio-height" aria-label="Ratio, height part">
-        </span>
-                <p class="field-note">Changing the width or height updates the other. Changing the ratio keeps the height and updates the width.</p>
+                        <label>Ratio <input type="number" id="ratio-width" aria-label="Ratio, width part"></label>
+                        :
+                        <input type="number" id="ratio-height" aria-label="Ratio, height part">
+                    </span>
+                <button type="button" id="swap-ratio-button" class="swap-button" title="Flip the ratio (4 : 3 becomes 3 : 4)" aria-label="Flip the ratio">⇄</button>
+
+                <div id="ratio-keep-group" class="inline-options" role="radiogroup" aria-labelledby="ratio-keep-label" hidden>
+                    <span id="ratio-keep-label">When the ratio changes, keep the:</span>
+                    <label><input type="radio" name="ratioKeep" value="height"> Height</label>
+                    <label><input type="radio" name="ratioKeep" value="width"> Width</label>
+                </div>
+
+                <p id="ratio-note" class="field-note"></p>
             </div>
         </fieldset>
 
         <fieldset>
             <legend>Grid per output image</legend>
             <label>Columns <input type="number" id="columns"></label>
-            <button type="button" id="swap-button" title="Swap columns and rows" aria-label="Swap columns and rows">⇄</button>
+            <button type="button" id="swap-button" class="swap-button" title="Swap columns and rows" aria-label="Swap columns and rows">⇄</button>
             <label>Rows <input type="number" id="rows"></label>
         </fieldset>
 
@@ -161,6 +178,24 @@
         <div id="output-list"></div>
     </section>
 </main>
+
+<!-- Full-size image preview. Opened from a thumbnail, filled in by script.js -->
+<dialog id="lightbox" aria-labelledby="lightbox-title">
+    <div class="lightbox-bar">
+        <div>
+            <p id="lightbox-title" class="lightbox-title"></p>
+            <p id="lightbox-details" class="lightbox-details"></p>
+        </div>
+        <button type="button" id="lightbox-close" class="lightbox-button" aria-label="Close preview">×</button>
+    </div>
+    <div class="lightbox-stage">
+        <button type="button" id="lightbox-prev" class="lightbox-button lightbox-nav" aria-label="Previous image">‹</button>
+        <div id="lightbox-viewport">
+            <div id="lightbox-frame"><img id="lightbox-image" alt=""></div>
+        </div>
+        <button type="button" id="lightbox-next" class="lightbox-button lightbox-nav" aria-label="Next image">›</button>
+    </div>
+</dialog>
 
 <script src="script.js"></script>
 </body>
