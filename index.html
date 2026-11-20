@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -159,10 +160,25 @@
                 </span>
             <label><input type="radio" name="orientation" value="portrait"> Portrait</label>
             <label><input type="radio" name="orientation" value="landscape"> Landscape</label>
-            <label>Margin on every side (mm) <input type="number" id="margin"></label>
+
+            <!-- Margins: one box for all sides, or four separate boxes.
+                 The sides are as you see the page (in landscape, "top" is the top of the landscape page). -->
+            <div>
+                <label><input type="checkbox" id="margins-same"> Same margin on all sides</label>
+            </div>
+            <div id="margin-all-group">
+                <label>Margin (mm) <input type="number" id="margin"></label>
+            </div>
+            <div id="margin-sides-group" hidden>
+                <label>Top (mm) <input type="number" id="margin-top"></label>
+                <label>Bottom (mm) <input type="number" id="margin-bottom"></label>
+                <label>Left (mm) <input type="number" id="margin-left"></label>
+                <label>Right (mm) <input type="number" id="margin-right"></label>
+            </div>
         </fieldset>
 
         <p id="paper-message"></p>
+        <p id="margin-message" hidden></p>
         <p id="settings-summary"></p>
         <p id="settings-error" role="alert"></p>
     </section>
@@ -170,6 +186,9 @@
     <!-- 4. Generated grid images and downloads -->
     <section id="output-section">
         <h2>4. Output</h2>
+        <label>Output file name <input type="text" id="output-name" maxlength="80" placeholder="grid"></label>
+        <p id="output-name-example" class="field-note"></p>
+
         <button type="button" id="generate-button">Generate output images</button>
         <button type="button" id="download-all-button" hidden>Download all</button>
         <span id="generate-hint"></span>
@@ -191,7 +210,7 @@
     <div class="lightbox-stage">
         <button type="button" id="lightbox-prev" class="lightbox-button lightbox-nav" aria-label="Previous image">‹</button>
         <div id="lightbox-viewport">
-            <div id="lightbox-frame"><img id="lightbox-image" alt=""></div>
+            <div id="lightbox-frame"></div>
         </div>
         <button type="button" id="lightbox-next" class="lightbox-button lightbox-nav" aria-label="Next image">›</button>
     </div>
@@ -200,3 +219,4 @@
 <script src="script.js"></script>
 </body>
 </html>
+ 

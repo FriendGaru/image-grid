@@ -5,8 +5,8 @@
      1. Design tokens   every color, size, and spacing value, named once
      2. Base            page-wide rules
      3. Components      buttons, focus ring, invalid and read-only fields
-     4. Page areas      upload, thumbnails, presets, settings, output
-                        (in page order)
+     4. Page areas      upload, thumbnails, presets, settings, output,
+                        image preview (lightbox)
 
    To change the look, edit a token in section 1. The rules after it use
    tokens by name, var(--name), and contain very few raw values.
@@ -54,10 +54,11 @@
     --color-focus-ring:    #7ab7ff;   /* light sky blue */
 
     /* Image preview (lightbox) */
-    --color-lightbox:       #1a1a1a;              /* very dark gray; the preview panel */
-    --color-backdrop:       rgba(0, 0, 0, 0.75);  /* black at 75% opacity; dims the page behind it */
-    --color-text-on-dark-muted: #bbb;             /* light gray, for secondary text on dark */
-    --color-on-dark-hover:  rgba(255, 255, 255, 0.15);  /* white at 15% opacity */
+    --color-lightbox:           #1a1a1a;                 /* very dark gray; the preview panel */
+    --color-backdrop:           rgba(0, 0, 0, 0.75);     /* black at 75% opacity; dims the page behind it */
+    --color-text-on-dark-muted: #bbb;                    /* light gray, for secondary text on dark */
+    --color-on-dark-hover:      rgba(255, 255, 255, 0.15);  /* white at 15% opacity */
+
 
     /* --- Spacing: use these for margins, padding, and gaps --- */
     --space-xs:  0.25rem;
@@ -75,6 +76,7 @@
     --font-size-base:     1rem;
     --font-size-icon:     1.1rem;    /* symbol buttons such as ⇄ */
     --font-size-heading:  1.2rem;
+    --font-size-nav:      1.75rem;   /* the ‹ › arrows in the preview */
     --font-weight-strong: 600;
     --line-height-base:   1.5;
 
@@ -94,7 +96,7 @@
     --settings-column-min: 320px;   /* narrowest a settings box gets before stacking */
     --number-input-width:  6rem;
     --copies-input-width:  4rem;
-    --text-input-width:    16rem;   /* the preset name box */
+    --text-input-width:    16rem;   /* the preset name and output name boxes */
     --remove-button-size:  1.5rem;
     --message-min-height:  1.5em;   /* stops the layout jumping as messages appear */
 
@@ -107,10 +109,9 @@
     --opacity-skipped:   0.35;   /* thumbnails set to 0 copies */
     --opacity-disabled:  0.5;
 
-    --lightbox-width:      min(95vw, 1600px);
-    --lightbox-height:     92dvh;
-    --lightbox-nav-size:   3rem;
-    --font-size-nav:       1.75rem;   /* the ‹ › arrows */
+    --lightbox-width:    min(95vw, 1600px);
+    --lightbox-height:   92dvh;
+    --lightbox-nav-size: 3rem;
 }
 
 
@@ -170,6 +171,7 @@ button {
     cursor: pointer;
 }
 
+/* The thumbnail picture and lightbox buttons have their own looks */
 button:not(.remove, .thumb-button, .lightbox-button):hover:not(:disabled) {
     background: var(--color-button-hover);
 }
@@ -253,8 +255,8 @@ input[readonly] {
 }
 
 /* One card per loaded image. Its parts, top to bottom:
-   picture, name, size, rotate buttons, copies field, skip note.
-   The × button is pinned to the top-right corner. */
+   picture (a button that opens the preview), name, size, rotate buttons,
+   copies field, skip note. The × button is pinned to the top-right corner. */
 .thumbnail {
     position: relative;   /* anchors the × button */
     padding: var(--space-xs);
@@ -464,6 +466,11 @@ fieldset label:has(input[type="radio"]) {
     color: var(--color-warning);
 }
 
+/* Warning that a margin is smaller than most printers can print */
+#margin-message {
+    color: var(--color-warning);
+}
+
 #settings-summary {
     color: var(--color-text-muted);
 }
@@ -477,6 +484,15 @@ fieldset label:has(input[type="radio"]) {
 /* --------------------------------------------------------------------------
    Output
    -------------------------------------------------------------------------- */
+
+#output-name {
+    width: var(--text-input-width);
+}
+
+/* The example file names under the name box */
+#output-name-example {
+    margin-bottom: var(--space-md);
+}
 
 #generate-hint {
     margin-left: var(--space-sm);
@@ -517,6 +533,7 @@ fieldset label:has(input[type="radio"]) {
     height: auto;
     border: var(--line-width) solid var(--color-border);
 }
+
 
 /* --------------------------------------------------------------------------
    Image preview (lightbox)

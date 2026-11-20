@@ -14,6 +14,8 @@ const fileInput = document.getElementById("file-input");
 const statusText = document.getElementById("status");
 const clearButton = document.getElementById("clear-button");
 const thumbnailList = document.getElementById("thumbnail-list");
+const outputNameInput = document.getElementById("output-name");
+const outputNameExample = document.getElementById("output-name-example");
 
 // Tries to load and decode one file. Resolves to an image entry,
 // or to null if the browser can't decode it.
@@ -247,6 +249,13 @@ function updateStatus(skippedNames = []) {
     statusText.textContent = message;
 }
 
+// Tasks that are started without waiting for them (such as loading files) report anything
+// unexpected here, so a failure is shown instead of silently lost.
+function reportUnexpectedError(error) {
+    console.error(error);
+    statusText.textContent = `Something went wrong: ${error.message}`;
+}
+
 // --- Settings ---
 const settingsSection = document.getElementById("settings-section");
 const settingsSummary = document.getElementById("settings-summary");
@@ -287,6 +296,11 @@ const sizeFields = {
 };
 
 const paperMessage = document.getElementById("paper-message");
+const marginMessage = document.getElementById("margin-message");
+const marginsSameInput = document.getElementById("margins-same");
+
+// Margins smaller than this are likely to be cut off by most printers.
+const PRINTER_MIN_MARGIN_MM = 5;
 
 // Standard paper sizes in millimeters, listed as short side × long side.
 const PAPER_SIZES = {
@@ -308,9 +322,13 @@ const PAPER_SIZES = {
 
 // Paper-related number fields (all in millimeters).
 const paperFields = {
-    margin:      { input: document.getElementById("margin"),        label: "Margin",              min: 0,  max: 100 },
-    customSide1: { input: document.getElementById("custom-side-1"), label: "Custom paper side 1", min: 50, max: 2000 },
-    customSide2: { input: document.getElementById("custom-side-2"), label: "Custom paper side 2", min: 50, max: 2000 },
+    margin:       { input: document.getElementById("margin"),        label: "Margin",        min: 0, max: 100 },
+    marginTop:    { input: document.getElementById("margin-top"),    label: "Top margin",    min: 0, max: 100 },
+    marginBottom: { input: document.getElementById("margin-bottom"), label: "Bottom margin", min: 0, max: 100 },
+    marginLeft:   { input: document.getElementById("margin-left"),   label: "Left margin",   min: 0, max: 100 },
+    marginRight:  { input: document.getElementById("margin-right"),  label: "Right margin",  min: 0, max: 100 },
+    customSide1:  { input: document.getElementById("custom-side-1"), label: "Custom paper side 1", min: 50, max: 2000 },
+    customSide2:  { input: document.getElementById("custom-side-2"), label: "Custom paper side 2", min: 50, max: 2000 },
 };
 
 // Input properties are strings in the browser's type definitions, so we convert explicitly.
@@ -362,6 +380,18 @@ for (const input of allRatioInputs) {
 
 // The stored ratio. The page's ratio boxes are views of this.
 let ratioPair = { width: 4, height: 3 };
+
+// Does this paper field matter right now? Fields that don't matter aren't checked:
+// the single margin or the four sides, and the custom sides only for custom paper.
+function isPaperFieldNeeded(key, values) {
+    if (key === "margin") {
+        return values.marginsSame;
+    }
+    if (key.startsWith("margin")) {
+        return !values.marginsSame; // marginTop, marginBottom, marginLeft, marginRight
+    }
+    return values.paper === "custom"; // customSide1, customSide2
+}
 
 // Returns the paper's { width, height } in mm for the chosen size and
 // orientation, or null when the user doesn't want a paper check.
@@ -582,6 +612,19 @@ function syncRatioAfterEdit(source) {
     // Ticking the box on needs nothing: the boxes already show the current shape.
 }
 
+// When "same margin on all sides" is switched off, the four side boxes start out
+// equal to the single margin, so nothing jumps.
+function syncMarginsAfterEdit(source) {
+    if (source === marginsSameInput && !marginsSameInput.checked) {
+        const single = paperFields.margin.input;
+        if (Number.isFinite(single.valueAsNumber)) {
+            for (const key of ["marginTop", "marginBottom", "marginLeft", "marginRight"]) {
+                paperFields[key].input.value = single.value;
+            }
+        }
+    }
+}
+
 // Reads every control and validates it. Returns pixel values and any errors.
 function readSettings() {
     const values = {};
@@ -624,13 +667,14 @@ function readSettings() {
         }
     }
 
-    // Paper and margin. The custom sides only matter for custom paper.
+    // Paper and margins. Only the fields that matter right now are checked:
+    // the single margin or the four sides, and the custom sides for custom paper.
     values.paper = document.getElementById("paper-size").value;
     values.orientation = document.querySelector('input[name="orientation"]:checked').value;
+    values.marginsSame = marginsSameInput.checked;
 
     for (const [key, field] of Object.entries(paperFields)) {
-        const needed = key === "margin" || values.paper === "custom";
-        if (!needed) {
+        if (!isPaperFieldNeeded(key, values)) {
             field.input.classList.remove("invalid");
             continue;
         }
@@ -690,8 +734,15 @@ function readSettings() {
 
     if (errors.length === 0) {
         values.paperMm = getPaperMm(values.paper, values.orientation, values.customSide1, values.customSide2);
+
+        // The margins in use: one value for every side, or the four separate ones.
+        values.margins = values.marginsSame
+            ? { top: values.margin, right: values.margin, bottom: values.margin, left: values.margin }
+            : { top: values.marginTop, right: values.marginRight, bottom: values.marginBottom, left: values.marginLeft };
+
         if (values.paperMm &&
-            2 * values.margin >= Math.min(values.paperMm.width, values.paperMm.height)) {
+            (values.margins.left + values.margins.right >= values.paperMm.width ||
+                values.margins.top + values.margins.bottom >= values.paperMm.height)) {
             errors.push("The margins leave no room to print on this paper.");
         }
     }
@@ -749,6 +800,10 @@ function onSettingsChange() {
 
     document.getElementById("custom-paper").hidden =
         document.getElementById("paper-size").value !== "custom";
+
+    // One margin box, or four.
+    document.getElementById("margin-all-group").hidden = !marginsSameInput.checked;
+    document.getElementById("margin-sides-group").hidden = marginsSameInput.checked;
 
     const unit = getSelectedUnit();
 
@@ -830,27 +885,47 @@ function updateSummary() {
     updatePaperCheck();
 }
 
-// Compares one output image's printed size with the paper's printable area.
+// Compares one output image's printed size with the paper's printable area,
+// and warns about margins that most printers can't print within.
 function updatePaperCheck() {
     const s = settings;
     paperMessage.className = "";
+    marginMessage.hidden = true;
 
     if (!s.paperMm) {
         paperMessage.textContent = "";
         return;
     }
 
+    const m = s.margins;
+    const sameMargins = m.top === m.right && m.right === m.bottom && m.bottom === m.left;
+
+    // Warn about margins below what most printers can handle (it doesn't block anything).
+    const tooSmall = [["top", m.top], ["right", m.right], ["bottom", m.bottom], ["left", m.left]]
+        .filter(([, value]) => value < PRINTER_MIN_MARGIN_MM);
+    if (tooSmall.length > 0) {
+        const where = sameMargins
+            ? `all sides, ${m.top} mm`
+            : tooSmall.map(([side, value]) => `${side} ${value} mm`).join(", ");
+        marginMessage.textContent =
+            `⚠ Margins under ${PRINTER_MIN_MARGIN_MM} mm (${where}) are likely to be cut off by most printers.`;
+        marginMessage.hidden = false;
+    }
+
     const fmt = (n) => n.toFixed(1);
     const size = getCanvasSize(s);
     const outW = pixelsToMm(size.width, s.dpi);
     const outH = pixelsToMm(size.height, s.dpi);
-    const availW = s.paperMm.width - 2 * s.margin;
-    const availH = s.paperMm.height - 2 * s.margin;
+    const availW = s.paperMm.width - m.left - m.right;
+    const availH = s.paperMm.height - m.top - m.bottom;
     const EPSILON = 0.01; // Guards against floating-point noise.
 
+    const marginText = sameMargins
+        ? `${m.top} mm margins`
+        : `margins (top ${m.top}, right ${m.right}, bottom ${m.bottom}, left ${m.left} mm)`;
     const paperName = s.paper === "custom" ? "your custom paper" : PAPER_SIZES[s.paper].label;
     const paperText = `${paperName} (${s.orientation})`;
-    const printable = `${fmt(availW)} × ${fmt(availH)} mm printable area after ${s.margin} mm margins`;
+    const printable = `${fmt(availW)} × ${fmt(availH)} mm printable area after ${marginText}`;
     const outputText = `${fmt(outW)} × ${fmt(outH)} mm`;
 
     if (outW <= availW + EPSILON && outH <= availH + EPSILON) {
@@ -863,8 +938,10 @@ function updatePaperCheck() {
     paperMessage.className = "warn";
     let text = `⚠ Too large: each output image is ${outputText}, but ${paperText} has only a ${printable}.`;
 
-    // Would rotating the paper help?
-    if (outW <= availH + EPSILON && outH <= availW + EPSILON) {
+    // Would turning the paper help? The margins stay on the same sides of the page as you see it.
+    const turnedAvailW = s.paperMm.height - m.left - m.right;
+    const turnedAvailH = s.paperMm.width - m.top - m.bottom;
+    if (outW <= turnedAvailW + EPSILON && outH <= turnedAvailH + EPSILON) {
         const other = s.orientation === "portrait" ? "landscape" : "portrait";
         text += ` It would fit in ${other} orientation.`;
     }
@@ -889,7 +966,8 @@ function updatePaperCheck() {
 
 // One listener for the whole section: "input" events bubble up from every control.
 settingsSection.addEventListener("input", (event) => {
-    syncRatioAfterEdit(event.target); // updates linked values first, so validation sees them
+    syncRatioAfterEdit(event.target);   // updates linked values first, so validation sees them
+    syncMarginsAfterEdit(event.target);
     onSettingsChange();
 });
 
@@ -960,7 +1038,13 @@ const DEFAULT_SETTINGS = {
     customSide1: 210,
     customSide2: 297,
     orientation: "portrait",
-    margin: 10,
+    marginsSame: true,
+    margin: 10,          // used for every side while marginsSame is true
+    marginTop: 10,       // used only while marginsSame is false
+    marginBottom: 10,
+    marginLeft: 10,
+    marginRight: 10,
+    outputName: "grid",  // output files are named grid_01.png, grid_02.png, ...
 };
 
 const presetNameInput = document.getElementById("preset-name");
@@ -970,8 +1054,8 @@ const presetWarnings = document.getElementById("preset-warnings");
 // Reads every control as the user sees it (in their chosen unit, not pixels).
 // Only call this when the settings are valid.
 function getFormValues() {
-    // The custom paper sides aren't validated unless "Custom" is selected,
-    // so they might hold junk. Fall back to the defaults if they do.
+    // Fields that aren't checked while they're hidden might hold junk,
+    // so fall back to the defaults if they do.
     const numberOrDefault = (input, fallback) =>
         Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : fallback;
 
@@ -1003,21 +1087,27 @@ function getFormValues() {
         customSide1: numberOrDefault(paperFields.customSide1.input, DEFAULT_SETTINGS.customSide1),
         customSide2: numberOrDefault(paperFields.customSide2.input, DEFAULT_SETTINGS.customSide2),
         orientation: document.querySelector('input[name="orientation"]:checked').value,
-        margin: paperFields.margin.input.valueAsNumber,
+        marginsSame: marginsSameInput.checked,
+        margin: numberOrDefault(paperFields.margin.input, DEFAULT_SETTINGS.margin),
+        marginTop: numberOrDefault(paperFields.marginTop.input, DEFAULT_SETTINGS.marginTop),
+        marginBottom: numberOrDefault(paperFields.marginBottom.input, DEFAULT_SETTINGS.marginBottom),
+        marginLeft: numberOrDefault(paperFields.marginLeft.input, DEFAULT_SETTINGS.marginLeft),
+        marginRight: numberOrDefault(paperFields.marginRight.input, DEFAULT_SETTINGS.marginRight),
+        outputName: outputNameInput.value.trim(),
     };
 }
 
-// Turns a preset name into a safe filename (without the extension).
+// Turns a name into a safe filename (without the extension).
 // Keeps letters and digits from any language; replaces anything else that
-// operating systems might reject.
-function makeSafeFilename(name) {
+// operating systems might reject. An empty result becomes `fallback`.
+function makeSafeFilename(name, fallback = "grid-settings") {
     const cleaned = name
         .replace(/[^\p{L}\p{N} ._()-]/gu, "-")
         .replace(/\s+/g, " ")
         .replace(/^[\s.]+|[\s.]+$/g, "") // no leading or trailing spaces or dots
         .slice(0, 80)
         .trim();
-    return cleaned || "grid-settings";
+    return cleaned || fallback;
 }
 
 // Saves text as a file by clicking a temporary link.
@@ -1109,7 +1199,7 @@ function sizeRule(field) {
     };
 }
 
-// Margin and custom paper sides are always in millimeters.
+// Margins and custom paper sides are always in millimeters.
 function millimeterRule(field) {
     return {
         label: field.label,
@@ -1173,7 +1263,17 @@ const SETTING_RULES = {
     customSide1:      millimeterRule(paperFields.customSide1),
     customSide2:      millimeterRule(paperFields.customSide2),
     orientation:      choiceRule("Orientation", ["portrait", "landscape"]),
+    marginsSame:      booleanRule("Same margin on all sides"),
     margin:           millimeterRule(paperFields.margin),
+    marginTop:        millimeterRule(paperFields.marginTop),
+    marginBottom:     millimeterRule(paperFields.marginBottom),
+    marginLeft:       millimeterRule(paperFields.marginLeft),
+    marginRight:      millimeterRule(paperFields.marginRight),
+    outputName: {
+        label: "Output file name",
+        valid: (value) => typeof value === "string" && value.length <= 80,
+        requirement: () => "is not text of 80 characters or fewer",
+    },
 };
 
 // The default for one setting. Default sizes are stored in pixels, so when
@@ -1198,13 +1298,40 @@ function formatSetting(key, value, unit) {
     if (typeof value === "number") {
         if (key in sizeFields) {
             text += ` ${unit}`;
-        } else if (key === "margin" || key.startsWith("customSide")) {
-            text += " mm";
+        } else if (key in paperFields) {
+            text += " mm"; // margins and custom paper sides
         } else if (key === "dpi") {
             text += " DPI";
         }
     }
     return text;
+}
+
+// Files saved before separate margins existed have a single "margin" and nothing
+// else about margins. Treat it as the margin for all four sides, and say so.
+function migrateOldMargin(rawSettings, warnings) {
+    const newMarginKeys = ["marginsSame", "marginTop", "marginBottom", "marginLeft", "marginRight"];
+    const isOldFormat = !newMarginKeys.some((key) => Object.hasOwn(rawSettings, key)) &&
+        Object.hasOwn(rawSettings, "margin") &&
+        SETTING_RULES.margin.valid(rawSettings.margin);
+
+    if (!isOldFormat) {
+        return rawSettings;
+    }
+
+    const margin = rawSettings.margin;
+    warnings.push(
+        `Margins: this file was saved before separate margins existed; its margin ` +
+        `(${margin} mm) is applied to all four sides.`
+    );
+    return {
+        ...rawSettings,
+        marginsSame: true,
+        marginTop: margin,
+        marginBottom: margin,
+        marginLeft: margin,
+        marginRight: margin,
+    };
 }
 
 // Checks the settings from a file. Returns a complete, valid set of values
@@ -1213,12 +1340,14 @@ function checkLoadedSettings(rawSettings) {
     const values = {};
     const warnings = [];
 
+    const source = migrateOldMargin(rawSettings, warnings);
+
     // Keys are checked in DEFAULT_SETTINGS order: unit first, then DPI,
     // because the other fields are validated in that unit.
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
         const rule = SETTING_RULES[key];
-        const present = Object.hasOwn(rawSettings, key);
-        const raw = rawSettings[key];
+        const present = Object.hasOwn(source, key);
+        const raw = source[key];
 
         if (present && rule.valid(raw, values.unit)) {
             values[key] = raw;
@@ -1328,13 +1457,20 @@ function checkLoadedSettings(rawSettings) {
     }
 
     // Combined check 4: the margins must leave room on the paper.
+    const margins = values.marginsSame
+        ? { top: values.margin, right: values.margin, bottom: values.margin, left: values.margin }
+        : { top: values.marginTop, right: values.marginRight, bottom: values.marginBottom, left: values.marginLeft };
     const paperMm = getPaperMm(values.paper, values.orientation, values.customSide1, values.customSide2);
-    if (paperMm && 2 * values.margin >= Math.min(paperMm.width, paperMm.height)) {
+
+    if (paperMm &&
+        (margins.left + margins.right >= paperMm.width || margins.top + margins.bottom >= paperMm.height)) {
         warnings.push(
-            `Margin: ${values.margin} mm leaves no room to print on this paper; ` +
-            `used the default, ${DEFAULT_SETTINGS.margin} mm.`
+            `Margins: they leave no room to print on this paper; ` +
+            `used the default, ${DEFAULT_SETTINGS.margin} mm on every side.`
         );
-        values.margin = DEFAULT_SETTINGS.margin;
+        for (const key of ["margin", "marginTop", "marginBottom", "marginLeft", "marginRight"]) {
+            values[key] = DEFAULT_SETTINGS[key];
+        }
     }
 
     // Anything in the file that this version doesn't know about.
@@ -1387,7 +1523,16 @@ function applySettingsToForm(v) {
     paperFields.customSide1.input.value = String(v.customSide1);
     paperFields.customSide2.input.value = String(v.customSide2);
     setRadio("orientation", v.orientation);
+
+    marginsSameInput.checked = v.marginsSame;
     paperFields.margin.input.value = String(v.margin);
+    paperFields.marginTop.input.value = String(v.marginTop);
+    paperFields.marginBottom.input.value = String(v.marginBottom);
+    paperFields.marginLeft.input.value = String(v.marginLeft);
+    paperFields.marginRight.input.value = String(v.marginRight);
+
+    outputNameInput.value = v.outputName;
+    updateOutputFilenames();
 
     onSettingsChange(); // validates, updates limits, summary, and messages
 }
@@ -1472,7 +1617,10 @@ loadSettingsInput.addEventListener("change", () => {
     const file = loadSettingsInput.files[0];
     loadSettingsInput.value = ""; // so choosing the same file again still triggers "change"
     if (file) {
-        loadSettingsFile(file);
+        loadSettingsFile(file).catch((error) => {
+            console.error(error);
+            showPresetResult("error", `Something went wrong while loading ${file.name}: ${error.message}`);
+        });
     }
 });
 
@@ -1707,8 +1855,10 @@ const outputMessage = document.getElementById("output-message");
 const outputList = document.getElementById("output-list");
 
 // Every generated page, as a compact PNG.
-// Each entry: { blob, url, width, height, dpi, filename, firstImage, lastImage }
-// (firstImage and lastImage are cell numbers, counting copies.)
+// Each entry: { blob, url, width, height, dpi, page, total, firstImage, lastImage, downloadButton }
+// (page counts from 1; firstImage and lastImage are cell numbers, counting copies.)
+// The file name isn't stored: it's built from the name box when needed, so editing
+// the name updates the download buttons without regenerating anything.
 const outputs = [];
 
 let generating = false;
@@ -1720,6 +1870,7 @@ let settingsValid = true;
 let generatedSignature = null; // what the current outputs were built from
 
 // A string describing everything that affects the drawn pixels.
+// (The output file name and the paper margins don't change the pixels, so they're not in it.)
 function getSignature(s, list) {
     return JSON.stringify([
         s.cellWidth, s.cellHeight, s.columns, s.rows, s.fitMode,
@@ -1742,6 +1893,36 @@ function updateGenerateButton() {
         ? "Fix the highlighted settings first."
         : "";
 }
+
+// --- Output file names ---
+
+// The name part of the files: what the user typed, cleaned up for file names.
+// A trailing ".png" is dropped, since we add it ourselves. Empty means "grid".
+function getOutputBaseName() {
+    const typed = outputNameInput.value.trim().replace(/\.png$/i, "");
+    return makeSafeFilename(typed, DEFAULT_SETTINGS.outputName);
+}
+
+// The file name for one page, such as holiday_03.png. The number has at least
+// two digits (01, 02, ...) and gets wider if there are 100 or more pages.
+function getOutputFilename(output) {
+    const digits = Math.max(2, String(output.total).length);
+    return `${getOutputBaseName()}_${String(output.page).padStart(digits, "0")}.png`;
+}
+
+// Refreshes the example under the name box and every download button.
+function updateOutputFilenames() {
+    const base = getOutputBaseName();
+    outputNameExample.textContent = `Files will be named ${base}_01.png, ${base}_02.png, and so on.`;
+
+    for (const output of outputs) {
+        if (output.downloadButton) {
+            output.downloadButton.textContent = `Download ${getOutputFilename(output)}`;
+        }
+    }
+}
+
+outputNameInput.addEventListener("input", updateOutputFilenames);
 
 // Encodes a canvas as a PNG. toBlob uses a callback, so we wrap it in a Promise.
 function canvasToBlob(canvas) {
@@ -1773,7 +1954,7 @@ const downloadAllButton = document.getElementById("download-all-button");
 function downloadOutput(output) {
     const link = document.createElement("a");
     link.href = output.url;
-    link.download = output.filename;
+    link.download = getOutputFilename(output);
     document.body.append(link); // Some browsers require the link to be in the page.
     link.click();
     link.remove();
@@ -1805,12 +1986,12 @@ function clearOutputs() {
 }
 
 // Adds one page's heading, details, download button, and preview to the page.
-function renderOutputCard(output, index, total) {
+function renderOutputCard(output) {
     const card = document.createElement("div");
     card.className = "output-card";
 
     const heading = document.createElement("h3");
-    heading.textContent = `Output image ${index + 1} of ${total}`;
+    heading.textContent = `Output image ${output.page} of ${output.total}`;
 
     const details = document.createElement("p");
     const range = output.firstImage === output.lastImage
@@ -1822,12 +2003,13 @@ function renderOutputCard(output, index, total) {
     const download = document.createElement("button");
     download.type = "button";
     download.className = "download";
-    download.textContent = `Download ${output.filename}`;
+    download.textContent = `Download ${getOutputFilename(output)}`;
     download.addEventListener("click", () => downloadOutput(output));
+    output.downloadButton = download; // so editing the name can update the label
 
     const img = document.createElement("img");
     img.src = output.url;
-    img.alt = `Output image ${index + 1} of ${total}`;
+    img.alt = `Output image ${output.page} of ${output.total}`;
 
     card.append(heading, details, download, img);
     outputList.append(card);
@@ -1881,19 +2063,20 @@ generateButton.addEventListener("click", async () => {
             canvas.width = 0;
             canvas.height = 0;
 
-            const digits = Math.max(2, String(pageCount).length);
             const output = {
                 blob: blob,
                 url: URL.createObjectURL(blob),
                 width: width,
                 height: height,
                 dpi: s.dpi,
-                filename: `grid-${String(page + 1).padStart(digits, "0")}.png`,
+                page: page + 1,
+                total: pageCount,
                 firstImage: first + 1,
                 lastImage: first + pageImages.length,
+                downloadButton: null,
             };
             outputs.push(output);
-            renderOutputCard(output, page, pageCount);
+            renderOutputCard(output);
         }
 
         const copiesText = cells.length === list.length
@@ -1915,7 +2098,7 @@ generateButton.addEventListener("click", async () => {
 
 // --- File picker ---
 fileInput.addEventListener("change", () => {
-    addFiles(fileInput.files);
+    addFiles(fileInput.files).catch(reportUnexpectedError);
     // Reset so choosing the same file again still triggers a "change" event.
     fileInput.value = "";
 });
@@ -1936,7 +2119,7 @@ dropZone.addEventListener("dragleave", (event) => {
 dropZone.addEventListener("drop", (event) => {
     event.preventDefault(); // Stops the browser from opening the file.
     dropZone.classList.remove("drag-over");
-    addFiles(event.dataTransfer.files);
+    addFiles(event.dataTransfer.files).catch(reportUnexpectedError);
 });
 
 // If a file is dropped *outside* the drop zone, browsers navigate to it and
@@ -1952,7 +2135,14 @@ clearButton.addEventListener("click", clearImages);
 const lightbox = document.getElementById("lightbox");
 const lightboxViewport = document.getElementById("lightbox-viewport");
 const lightboxFrame = document.getElementById("lightbox-frame");
-const lightboxImage = document.getElementById("lightbox-image");
+
+// The picture is created here instead of in the HTML, because an <img> with no src
+// is invalid HTML, and this one only gets a src when a thumbnail is opened.
+const lightboxImage = document.createElement("img");
+lightboxImage.id = "lightbox-image";
+lightboxImage.alt = "";
+lightboxFrame.append(lightboxImage);
+
 const lightboxTitle = document.getElementById("lightbox-title");
 const lightboxDetails = document.getElementById("lightbox-details");
 const lightboxPrev = document.getElementById("lightbox-prev");
